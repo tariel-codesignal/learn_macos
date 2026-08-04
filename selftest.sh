@@ -57,8 +57,11 @@ zsh_env_is() { # <desc> <expected> <zsh code>   - needs zshenv only
 # `script` hands each check its own pty; the pty turns \n into \r\n, hence the tr.
 have_pty=0
 command -v script >/dev/null 2>&1 && have_pty=1
-zi() { # <zsh code> - run in an interactive login zsh, echo its stdout
-  script -q -c "/bin/zsh -lic $(printf '%q' "$1")" /dev/null 2>/dev/null | tr -d '\r'
+zi_raw() { # <zsh code> - everything the pty saw, startup noise included
+  script -q -c "/bin/zsh -lic $(printf '%q' "$1")" /dev/null 2>/dev/null | tr -d '\r\004'
+}
+zi() { # <zsh code> - just the answer: the last line printed
+  zi_raw "$1" | tail -1
 }
 zsh_rc_is() { # <desc> <expected> <zsh code>   - needs zshrc
   if [ $have_pty -eq 0 ]; then skip "$1" "no script(1) for a pty"; return; fi
@@ -150,6 +153,17 @@ for fn in compinit zmv add-zsh-hook colors promptinit zargs edit-command-line; d
 done
 
 group "zsh (from /etc/zshrc, needs a pty)"
+# Nothing may reach the terminal before the first prompt. This zsh's compdump
+# will happily print function definitions while writing the completion dump,
+# which would greet the learner with pages of zsh source and pollute the
+# transcript the grader reads.
+if [ $have_pty -eq 0 ]; then
+  skip "interactive startup is silent" "no script(1) for a pty"
+else
+  noise="$(zi_raw 'print -r -- READY' | grep -vx 'READY' | grep -vx '' | head -3)"
+  [ -z "$noise" ] && pass "interactive startup is silent" \
+                  || fail "interactive startup is silent" "first lines: $noise"
+fi
 zsh_rc_is "prompt is the Mac's"    "%n@%m %1~ %% "               'print -r -- $PS1'
 zsh_rc_is "history file is Apple's path" "/Users/Learner/.zsh_history" 'print -r -- $HISTFILE'
 zsh_rc_is "Home key is bound"      "0" 'bindkey "^[[H" | grep -q beginning-of-line; print -r -- $?'

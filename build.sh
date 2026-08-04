@@ -301,7 +301,11 @@ PS1="%n@%m %1~ %% "
 # completion needs it to work. The dump goes outside $HOME - compinit writes one
 # even when it finds no completers, and a fresh Mac home has no .zcompdump for
 # `ls -a ~` to show.
-autoload -Uz compinit && compinit -u -d /private/var/db/.zcompdump 2>/dev/null
+# stdout is discarded as well as stderr: this zsh's compdump can print function
+# definitions to the terminal while writing the dump, which would greet the
+# learner with 200 lines of zsh internals and land in the graded transcript.
+# compinit has nothing to say on success, so nothing is lost.
+autoload -Uz compinit && compinit -u -d /private/var/db/.zcompdump >/dev/null 2>&1
 
 # --- CodeSignal command tracking -------------------------------------------
 # PROMPT_SP marks partial lines with an inverse "%", which only adds noise to a
