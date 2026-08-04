@@ -53,7 +53,22 @@ for need in zsh/bin/zsh zsh/modules zsh/functions tools/bin/less tools/bin/nano;
   [ -e "$VEN/$need" ] || bail "macOS simulator: payload is missing $need."
 done
 
-rm -rf "$R"
+# A live session's bind mounts pin the dentries underneath $R, and a pinned
+# mountpoint cannot be unlinked from any namespace - rm fails with EBUSY and
+# leaves the old tree in place. Building on top of that produces a root that is
+# half old and half new: enough of it works to reach a prompt, and the parts
+# written later (the shims, /private/var/db/.cmdlog) are simply missing. Refuse
+# instead, since the symptom is otherwise a mystery.
+rm -rf "$R" 2>/dev/null
+if [ -e "$R" ]; then
+  bail "macOS simulator: could not remove $R" \
+       "Something still has it mounted - usually an earlier session that was" \
+       "suspended rather than exited. Check with:  jobs" \
+       "then stop it (kill %1) and run build.sh again." \
+       "" \
+       "Leftover paths:" \
+       "$(find "$R" -mindepth 1 -maxdepth 2 2>/dev/null | head -5)"
+fi
 mkdir -p "$R"
 
 # ---------------------------------------------------------------- directories

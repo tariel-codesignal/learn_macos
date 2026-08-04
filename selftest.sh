@@ -46,10 +46,24 @@ lacks() {
   local got; got="$("$@" 2>/dev/null)"
   if [ "${got#*"$bad"}" = "$got" ]; then pass "$d"; else fail "$d" "output contains [$bad]"; fi
 }
-zsh_is() { # zsh_is <desc> <expected> <zsh code>
-  # -i as well as -l: zsh sources /etc/zshrc only for interactive shells, so
-  # anything set there (PS1, HISTFILE, bindkeys, completion) is absent without it.
-  is "$1" "$2" /bin/zsh -lic "$3"
+# zsh sources /etc/zshenv for every shell but /etc/zshrc only for interactive
+# ones, so checks split by which file sets the thing being checked.
+zsh_env_is() { # <desc> <expected> <zsh code>   - needs zshenv only
+  is "$1" "$2" /bin/zsh -lc "$3"
+}
+
+# An interactive zsh insists on owning a terminal. Started from this script it is
+# not the foreground process group, so it takes SIGTTIN and stops the whole run.
+# `script` hands each check its own pty; the pty turns \n into \r\n, hence the tr.
+have_pty=0
+command -v script >/dev/null 2>&1 && have_pty=1
+zi() { # <zsh code> - run in an interactive login zsh, echo its stdout
+  script -q -c "/bin/zsh -lic $(printf '%q' "$1")" /dev/null 2>/dev/null | tr -d '\r'
+}
+zsh_rc_is() { # <desc> <expected> <zsh code>   - needs zshrc
+  if [ $have_pty -eq 0 ]; then skip "$1" "no script(1) for a pty"; return; fi
+  local got; got="$(zi "$3")"
+  [ "$got" = "$2" ] && pass "$1" || fail "$1" "want [$2] got [$got]"
 }
 
 T=/Users/Learner/.selftest.tmp
@@ -122,26 +136,33 @@ else
   skip "brew install wget" "host has no wget"
 fi
 
-group "zsh"
-zsh_is "OSTYPE reads darwin"      "darwin24.0"  'print -r -- $OSTYPE'
-zsh_is "VENDOR reads apple"       "apple"       'print -r -- $VENDOR'
-zsh_is "CPUTYPE reads arm64"      "arm64"       'print -r -- $CPUTYPE'
-zsh_is "prompt is the Mac's"      "%n@%m %1~ %% " 'print -r -- $PS1'
-zsh_is "TMPDIR is a Darwin one"   "0"           '[[ $TMPDIR == /var/folders/* ]]; print -r -- $?'
+group "zsh (from /etc/zshenv)"
+zsh_env_is "OSTYPE reads darwin"    "darwin24.0"  'print -r -- $OSTYPE'
+zsh_env_is "VENDOR reads apple"     "apple"       'print -r -- $VENDOR'
+zsh_env_is "CPUTYPE reads arm64"    "arm64"       'print -r -- $CPUTYPE'
+zsh_env_is "TMPDIR is a Darwin one" "0"           '[[ $TMPDIR == /var/folders/* ]]; print -r -- $?'
+zsh_env_is "fpath reaches every digest" "0" \
+  'for d in Completion Misc Zle Prompts VCS_Info; do
+     (( ${fpath[(I)/System/Library/zsh/functions/$d]} )) || exit 1
+   done; print -r -- 0'
 for fn in compinit zmv add-zsh-hook colors promptinit zargs edit-command-line; do
   succeeds "autoload $fn resolves" /bin/zsh -lc "autoload +X -Uz $fn"
 done
-succeeds "Home key is bound"      /bin/zsh -lic 'bindkey "^[[H" | grep -q beginning-of-line'
-succeeds "Up arrow searches history" /bin/zsh -lic 'bindkey | grep -q up-line-or-search'
-fails    "no .zcompdump in \$HOME"   test -e /Users/Learner/.zcompdump
-succeeds "history file is Apple's path" /bin/zsh -lic '[[ $HISTFILE == /Users/Learner/.zsh_history ]]'
 
-if ls /System/Library/zsh/functions/Completion/_* >/dev/null 2>&1 ||
-   ls /System/Library/zsh/functions/Completion/*.zwc >/dev/null 2>&1; then
-  N="$(/bin/zsh -lic 'print -r -- ${#_comps}' 2>/dev/null | tr -dc 0-9)"
+group "zsh (from /etc/zshrc, needs a pty)"
+zsh_rc_is "prompt is the Mac's"    "%n@%m %1~ %% "               'print -r -- $PS1'
+zsh_rc_is "history file is Apple's path" "/Users/Learner/.zsh_history" 'print -r -- $HISTFILE'
+zsh_rc_is "Home key is bound"      "0" 'bindkey "^[[H" | grep -q beginning-of-line; print -r -- $?'
+zsh_rc_is "Delete key is bound"    "0" 'bindkey "^[[3~" | grep -q delete-char; print -r -- $?'
+zsh_rc_is "Up arrow searches history" "0" 'bindkey | grep -q up-line-or-search; print -r -- $?'
+fails     "no .zcompdump in \$HOME"   test -e /Users/Learner/.zcompdump
+
+C=/System/Library/zsh/functions/Completion
+if ls "$C"/_* >/dev/null 2>&1 || ls "$C"/*.zwc >/dev/null 2>&1; then
+  N="$(zi 'print -r -- ${#_comps}' | tr -dc 0-9)"
   if [ "${N:-0}" -gt 100 ]; then pass "completion is live (${N} completers)"
   else fail "completion is live" "only ${N:-0} completers; check fpath in /etc/zshenv"; fi
-  succeeds "git completion is defined" /bin/zsh -lic '(( ${+_comps[git]} ))'
+  zsh_rc_is "git completion is defined" "1" 'print -r -- ${+_comps[git]}'
 else
   skip "programmable completion" "payload has no Completion functions; run revendor.sh"
 fi
