@@ -113,8 +113,21 @@ if [ $# -gt 0 ]; then
   exec chroot "$R" /usr/bin/env -i "${ENVV[@]}" "$@"
 fi
 
+# seed.sh records a starting directory here when a task wants the learner to
+# begin somewhere other than the home. Anything unusable falls back to the home
+# rather than dropping the learner at / - seed.sh is where a bad path is
+# reported, at setup time, where someone can act on it.
+START=/Users/Learner
+if [ -f "$R/private/var/db/.startdir" ]; then
+  S="$(head -1 "$R/private/var/db/.startdir" | tr -d '\r')"
+  case "$S" in
+    ''|*\'*) ;;
+    *) [ -d "$R$S" ] && START="$S" ;;
+  esac
+fi
+
 LOGIN_TS="$(LC_ALL=C date '+%a %b %e %T')"
 printf 'Last login: %s on ttys000\n' "$LOGIN_TS"
 
 exec chroot "$R" /usr/bin/env -i "${ENVV[@]}" \
-  /bin/sh -c 'cd /Users/Learner && exec /bin/zsh -l'
+  /bin/sh -c "cd '$START' && exec /bin/zsh -l"

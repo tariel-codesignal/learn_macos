@@ -34,6 +34,7 @@ The learner therefore gets a **real** filesystem root: `pwd` is `/Users/Learner`
 |---|---|
 | `build.sh` | Builds the root filesystem. Pure file creation, ~0.3s. |
 | `enter.sh` | Namespaces, bind mounts, chroot, login. |
+| `seed.sh` | Populates the built root from a task's own seed directory. Optional; runs after build.sh. |
 | `selftest.sh` | ~90 assertions run inside the built root. Run it after any change here, and after the host image changes. |
 | `manifest/*.txt` | Curated command names per directory — the reason `ls /usr/bin` reads like a Mac and has no `apt`, `dpkg` or `systemctl`. |
 | `manifest/zsh_functions.txt` | Every zsh function name a real Mac ships. Filters what `revendor.sh` vendors for completion. |
@@ -185,6 +186,65 @@ still works — `compinit` just finds nothing, exactly as before. Run
 Delete, and prefix-search on the arrow keys), plus the CSI forms of those keys,
 which Apple's file lacks and the browser terminal actually sends. Without them
 Home and End insert escape junk into the line — and into the graded transcript.
+
+## Starting with a task's own files
+
+`seed.sh` populates the built root from a directory the task ships, so a learner
+can open a shell already holding the files the exercise is about — and start in
+whichever directory the task wants.
+
+```
+bash build.sh && bash seed.sh /usercode/FILESYSTEM/.codesignal/macos-seed
+```
+
+Order matters: `build.sh` wipes the root, so seeding comes after it. It is
+entirely optional — a task with no seed directory gets the stock home, and setup
+behaves exactly as before.
+
+The seed directory may hold any of these, all optional:
+
+| Name | What it does |
+|---|---|
+| `home/` | Copied into `/Users/Learner`. |
+| `root/` | Copied into `/` — for `/Applications`, `/etc`, `/Volumes`. |
+| `MANIFEST` | Directories and empty files to create, one per line. |
+| `START` | One line: the directory the learner's shell starts in. |
+| `setup.zsh` | Runs last, inside the simulated Mac, as Learner. |
+
+If none of those names are present, the whole directory is treated as `home/` —
+the common case of "just give the learner these files". A worked example is in
+[`examples/macos-seed/`](examples/macos-seed).
+
+`MANIFEST` exists because **git cannot store an empty directory**, and neither
+can CodeSignal's task storage. It is also the only way to set a mode:
+
+```
+dir  Desktop/report/archive
+dir  Documents/private 700
+file Desktop/report/.gitkeep
+file Documents/private/secrets.txt 600
+```
+
+`setup.zsh` runs inside the chroot, so it can use the Mac's own commands rather
+than reaching into the root from outside — `touch -t` to backdate a file for an
+`ls -lt` exercise, `pbcopy` to prime the clipboard, `defaults write`,
+`brew install`. The copy is removed afterwards, so the learner never finds it.
+
+`START` is recorded at `/private/var/db/.startdir`, which `enter.sh` reads. A
+path that does not exist is a setup-time failure naming the path, not a silent
+fallback — but if the file is somehow unusable at login, `enter.sh` falls back to
+the home rather than dropping the learner at `/`.
+
+Three things to know before writing a seed:
+
+- **Text only.** Seed content lives in task storage, which mangles binaries —
+  the reason this repo exists. Anything binary has to come through `vendor/`.
+- **Ownership takes care of itself.** Files copied by the user that runs setup
+  map to uid 0 inside the namespace, which `/etc/passwd` names `Learner`. Files
+  owned by anyone else surface as `root wheel`.
+- **Avoid spaces in a `START` path.** `run_solution.sh` parses the transcript
+  with a prompt pattern that expects a space-free directory name. `seed.sh`
+  warns when it sees one.
 
 ## Self-test
 

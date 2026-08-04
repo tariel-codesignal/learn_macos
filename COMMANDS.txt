@@ -1,0 +1,194 @@
+================================================================================
+ SUPPORTED COMMANDS - macOS terminal simulation (learn_macos)
+================================================================================
+
+ What a learner can run inside the simulated Mac, laid out the way a Mac lays
+ it out. Written for course authors deciding what a task may rely on.
+
+ LEGEND
+   (none)  Real binary from the host image, bind-mounted at the Mac's path.
+           Behaves exactly as the Linux tool does, including GNU-only flags.
+   *       Shim wrapping a real tool, adjusted to behave like BSD/macOS:
+           macOS-only flags accepted, GNU-only flags rejected with BSD's error.
+   !       Simulated. Output is invented, or the command deliberately refuses.
+           Never assert on anything beyond what is described below.
+   +       Vendored real binary, or a generated wrapper.
+
+ Everything unmarked depends on the host image actually providing it.
+ selftest.sh reports any name that failed to bind, so run it after the
+ container image changes:
+
+   bash build.sh && MACOS_SELFTEST=selftest.sh bash enter.sh
+
+--------------------------------------------------------------------------------
+ /bin
+--------------------------------------------------------------------------------
+bash  cat  chmod  cp  dash  date*  dd  df*  echo  ed  expr  hostname  kill
+ln  ls*  mkdir  mv  ps!  pwd  realpath  rm  rmdir  sh+  sleep  stty  sync
+test  unlink  zsh+
+
+--------------------------------------------------------------------------------
+ /usr/bin
+--------------------------------------------------------------------------------
+arch!  awk  banner  base64  basename  bc  bunzip2  bzip2  caffeinate!  cal
+chgrp  cksum  clear  cmp  col  colrm  column  comm  compress  cpio  crontab
+csplit  csrutil!  curl  cut  date*  defaults!  df*  diff  diff3  dirname  du*
+egrep  env  expand  false  fgrep  file*  find*  fmt  fold  gcore  getconf  git
+grep*  groups  gunzip  gzip  head  hexdump  iconv  id!  install  join  jot
+last  less+  lex  locale  logger  login  logname  look  ls*  m4  mail  make
+man*  md5*  mdfind*  mkfifo  mktemp  more  nano+  nc  newgrp  nice  nl  nohup
+nslookup  od  open!  openssl  osascript!  passwd  paste  patch  pbcopy!
+pbpaste!  perl  pgrep!  pkill!  plutil!  pmset!  pr  printenv  printf  ps!
+python+  python3+  readlink*  rev  rsync  ruby  say!  scp  screencapture!
+script  sdiff  sed*  seq  sftp  shasum  sort  split  ssh  ssh-add  ssh-agent
+ssh-keygen  stat*  strings  su  sudo+  sw_vers!  tail  tar  tee  tic  time
+top!  touch  tput  tr  true  tty  uname!  unexpand  unifdef  uniq  unzip
+uptime  users  uudecode  uuencode  uuidgen  vi  view  vim  vm_stat!  w  wc
+whatis  whereis  which  who  whoami  write  xargs*  xattr!  xcode-select!  xxd
+yes  zcat  zdiff  zgrep  zip  zless  zmore
+
+--------------------------------------------------------------------------------
+ /sbin
+--------------------------------------------------------------------------------
+dmesg!  fsck  halt!  ifconfig  mount!  ping  ping6  reboot!  route
+shutdown!  umount!
+
+--------------------------------------------------------------------------------
+ /usr/sbin
+--------------------------------------------------------------------------------
+arp  chown  chroot  diskutil!  lsof  netstat  networksetup!  nvram!
+softwareupdate!  spctl!  sysctl!  system_profiler!  systemsetup!  traceroute
+traceroute6  visudo
+
+--------------------------------------------------------------------------------
+ /opt/homebrew/bin
+--------------------------------------------------------------------------------
+brew*
+
+--------------------------------------------------------------------------------
+ BSD vs GNU: what the * shims actually reproduce
+--------------------------------------------------------------------------------
+ These are safe to build a task around - the divergence is the point.
+
+   sed -i        Requires an extension argument. `sed -i 's/a/b/' f` fails with
+                 macOS's exact error and leaves the file untouched.
+   ls            Accepts -G -@ -O -T -e -W -%; rejects GNU long options; -l uses
+                 BSD column spacing with no SELinux dot; totals in 512-byte
+                 blocks. Hides Linux-only entries from a listing of /.
+   stat          -f FORMAT and -x work; -c is rejected as BSD rejects it.
+   date          -v adjustments, -r, -j, -f work; -d and --date are rejected.
+   du            Default unit is 512-byte blocks.
+   grep          -P is rejected with BSD's usage text.
+   readlink      -f, -e, -m are rejected.
+   find          -printf, -regextype, -executable, -readable, -writable are
+                 rejected. Prunes /proc, /lib64 and /usr/libexec/.sys.
+   md5           BSD md5, not md5sum.
+   man           Reports "No manual entry for X" - the image ships no pages.
+
+ Error WORDING elsewhere is still GNU's. `ls: cannot access 'x'` where macOS
+ says `ls: x: No such file or directory`. Only the divergences listed above are
+ exact; do not grade on other error text.
+
+--------------------------------------------------------------------------------
+ Simulated commands: what they actually do
+--------------------------------------------------------------------------------
+ Identity and system info - fixed values, safe to read, never changes:
+   sw_vers       macOS 15.5, build 24F74.
+   uname         Darwin 24.5.0, arm64.
+   id            uid 501, gid 20(staff), plus a real Mac's group list.
+   arch          arm64.
+   sysctl, system_profiler, vm_stat, pmset, csrutil, spctl, nvram,
+   xcode-select, softwareupdate, networksetup, systemsetup, diskutil
+                 Plausible fixed output for a 15.5 machine.
+
+ Process tools - a CLOSED FICTION. All four report the same hardcoded table
+ (launchd, logd, opendirectoryd, Finder, Dock, and the learner's own shell):
+   ps, top, pgrep, pkill
+                 A learner's `sleep 300 &` does NOT appear, and `pkill sleep`
+                 finds nothing. DO NOT build process-management tasks.
+                 `kill` and `jobs` on the shell's own jobs do work.
+
+ Refuse by design - a Mac refuses these to a non-root user, and here they must
+ refuse for real reasons (they would break the session or leak the host):
+   dmesg         Would print the container host's kernel ring buffer.
+   umount        Would unmount the binds the simulator is built from.
+   mount         With no arguments prints a Mac's mount table; anything else
+                 is refused.
+   shutdown, halt, reboot
+                 Print "NOT super-user". Under sudo they still refuse, where a
+                 real Mac would proceed.
+
+ Desktop-facing stubs - accept arguments and report success, with no GUI
+ behind them. Some keep real state on disk, so they are usable in a task:
+   pbcopy/pbpaste  A working clipboard backed by a file - pipe in, pipe out.
+   defaults, plutil, xattr
+                   Real reads and writes against real plist/attr storage.
+   open, mdfind, screencapture, say, osascript, caffeinate
+                   Report plausible success. `open` does not launch anything.
+
+--------------------------------------------------------------------------------
+ Homebrew
+--------------------------------------------------------------------------------
+ Subcommands: install uninstall list info search update upgrade doctor config
+ --prefix --cellar --version
+
+ The formula catalog (`brew search`, `brew info`):
+   bat cmake coreutils curl fd ffmpeg fzf gh git gnu-sed go htop jq make
+   neovim node openssl@3 pkg-config python@3.13 ripgrep rsync sqlite tmux
+   tree watch wget zsh
+
+ `brew install X` always records the install and prints correct output. It
+ produces a WORKING binary only when the host image happens to ship one -
+ wget, git, curl, tmux, python, node, openssl, rsync, watch, make,
+ pkg-config and ripgrep do work end to end. The rest install "successfully"
+ and leave nothing runnable, so do not grade on running them.
+
+--------------------------------------------------------------------------------
+ zsh (5.8.1) - builtins and shell features
+--------------------------------------------------------------------------------
+ Interactive: history, tab completion (filenames always; command arguments and
+ flags once the completion payload is vendored), Home/End/Delete, up-arrow
+ prefix search, ^R, ^A/^E, globbing, brace expansion, pipes, redirection,
+ job control (&, jobs, fg, bg, kill %1), aliases, functions, variables.
+
+ Builtins include: cd echo print printf pwd read test [ [[ let local typeset
+ declare export unset alias unalias source . eval exec exit return break
+ continue shift set setopt unsetopt bindkey zmodload zstyle autoload
+ fc history jobs fg bg kill wait suspend disown times trap ulimit umask
+ whence which type hash getopts zle vared
+
+ Autoloadable functions available: compinit zmv add-zsh-hook colors
+ promptinit zargs edit-command-line zcalc zed run-help and the VCS_Info
+ suite. `$ZSH_VERSION` reads 5.8.1 (a real 15.5 Mac ships 5.9) - do not
+ assert on it.
+
+--------------------------------------------------------------------------------
+ Deliberately NOT available
+--------------------------------------------------------------------------------
+ Never present, and their absence is the point:
+   apt  dpkg  apt-get  systemctl  snap  yum  and every other Linux-only name.
+
+ On a real Mac but not simulated here - avoid tasks that need them:
+   launchctl     Nothing here can model launchd.
+   log           No unified logging system exists.
+   killall       Would need a real process table (see the process tools note).
+   ditto  textutil  codesign  plutil -convert to binary  softwareupdate -i
+   defaults from a real preferences daemon
+   Anything GUI: Finder, Terminal.app windows, Spotlight indexing.
+
+ Not on a stock Mac either, so do not expect them unless installed via brew:
+   wget  tree  jq  htop  gnu tools (gsed, gawk, …)
+
+ telnet is absent from both - Apple removed it in macOS 10.13.
+
+--------------------------------------------------------------------------------
+ Keeping this file honest
+--------------------------------------------------------------------------------
+ The per-directory lists above are the union of manifest/*.txt (real host
+ binaries) and shims/ (everything simulated). After adding a command,
+ regenerate them with:
+
+   for d in bin usr_bin usr_sbin sbin; do
+     echo "--- $d"; { cat manifest/$d.txt; ls shims/$d 2>/dev/null; } \
+       | grep -vx '' | sort -u | tr '\n' ' '; echo
+   done

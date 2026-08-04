@@ -1,0 +1,7 @@
+# dir <path> [mode]   |   file <path> [mode]      paths are under /Users/Learner
+# Empty directories and empty files can only be shipped from here: git does not
+# store an empty directory, and neither does CodeSignal's task storage.
+dir  Desktop/report/archive
+dir  Documents/private 700
+file Desktop/report/.gitkeep
+file Documents/private/secrets.txt 600
