@@ -1,0 +1,21 @@
+#!/bin/bash
+D="$(LC_ALL=C date '+%Y/%m/%d %H:%M:%S')"
+cat <<OUT
+Processes: 428 total, 2 running, 426 sleeping, 2103 threads
+$D
+Load Avg: 1.72, 2.04, 2.11
+CPU usage: 4.16% user, 6.25% sys, 89.58% idle
+SharedLibs: 412M resident, 78M data, 34M linkedit.
+MemRegions: 128473 total, 3204M resident, 142M private, 1428M shared.
+PhysMem: 14G used (2103M wired, 1204M compressor), 1854M unused.
+VM: 198T vsize, 4691M framework vsize, 0(0) swapins, 0(0) swapouts.
+Networks: packets: 892341/612M in, 743128/98M out.
+Disks: 1204837/28G read, 843921/19G written.
+
+PID    COMMAND      %CPU TIME     #TH   #WQ  #PORT MEM    PURG   CMPRS
+488    Finder       0.2  00:09.42 6     2    342   152M   0B     12M
+501    Dock         0.1  00:06.75 5     2    287   98M    0B     8M
+102    logd         0.0  00:03.11 4     1    98    11M    0B     2M
+1      launchd      0.0  00:14.23 4     2    2841  20M    0B     4M
+${PPID:-915}    zsh          0.0  00:00.05 1     0    24    3120K  0B     0B
+OUT

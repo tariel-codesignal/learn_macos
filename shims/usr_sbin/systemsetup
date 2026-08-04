@@ -1,0 +1,7 @@
+#!/bin/bash
+case "$1" in
+  -gettimezone) printf 'Time Zone: Europe/Berlin\n' ;;
+  -getremotelogin) printf 'Remote Login: Off\n' ;;
+  -getcomputersleep) printf 'Computer Sleep: 1 minutes\n' ;;
+  *) printf 'You need administrator access to run this tool... exiting!\n' >&2; exit 1 ;;
+esac

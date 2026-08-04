@@ -1,0 +1,16 @@
+#!/bin/bash
+# BSD find: path is mandatory, no -printf
+GNU=/usr/libexec/.sys/bin/find
+usage() { printf 'usage: find [-H | -L | -P] [-EXdsx] [-f path] path ... [expression]\n       find [-H | -L | -P] [-EXdsx] -f path [path ...] [expression]\n' >&2; exit 1; }
+if [ $# -eq 0 ]; then usage; fi
+case "$1" in
+  -[HLPEXdsxf]*) ;;
+  -*) printf 'find: illegal option -- %s\n' "${1:1:1}" >&2; usage ;;
+esac
+for a in "$@"; do
+  case "$a" in
+    -printf|-regextype|-executable|-readable|-writable)
+      printf 'find: %s: unknown primary or operator\n' "$a" >&2; exit 1 ;;
+  esac
+done
+exec -a find "$GNU" "$@"

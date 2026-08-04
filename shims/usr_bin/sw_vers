@@ -1,0 +1,9 @@
+#!/bin/bash
+PN="macOS"; PV="15.5"; BV="24F74"
+case "$1" in
+  "")               printf 'ProductName:\t\t%s\nProductVersion:\t\t%s\nBuildVersion:\t\t%s\n' "$PN" "$PV" "$BV" ;;
+  -productName)     printf '%s\n' "$PN" ;;
+  -productVersion)  printf '%s\n' "$PV" ;;
+  -buildVersion)    printf '%s\n' "$BV" ;;
+  *) printf 'Usage: sw_vers [-productName|-productVersion|-productVersionExtra|-buildVersion]\n' >&2; exit 1 ;;
+esac

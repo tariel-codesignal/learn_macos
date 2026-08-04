@@ -1,0 +1,5 @@
+#!/bin/bash
+case "$1" in
+  -p) printf 'SystemAudioVolume\t%%80\nboot-args\t\nprev-lang:kbd\ten-US:0\n' ;;
+  *) printf 'nvram: Error getting variable - '"'"'%s'"'"': (iokit/common) data was not found\n' "$1" >&2; exit 1 ;;
+esac

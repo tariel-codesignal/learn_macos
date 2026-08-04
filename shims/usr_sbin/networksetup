@@ -1,0 +1,7 @@
+#!/bin/bash
+case "$1" in
+  -listallnetworkservices) printf 'An asterisk (*) denotes that a network service is disabled.\nWi-Fi\nThunderbolt Bridge\n' ;;
+  -getinfo) printf 'DHCP Configuration\nIP address: 192.168.1.42\nSubnet mask: 255.255.255.0\nRouter: 192.168.1.1\nClient ID:\nIPv6: Automatic\nWi-Fi ID: a4:83:e7:1c:9d:0f\n' ;;
+  -getcomputername) printf "Learner's MacBook Pro\n" ;;
+  *) printf 'networksetup: Error - unknown option.\n** Error: The parameters were not valid.\n' >&2; exit 1 ;;
+esac

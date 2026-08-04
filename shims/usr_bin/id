@@ -1,0 +1,17 @@
+#!/bin/bash
+# macOS id. The session really runs as uid 0 inside the user namespace; a real
+# Mac account is uid 501 / gid 20(staff), so report that.
+U=Learner; UID_=501; GID_=20
+GROUPS_STR='20(staff),12(everyone),61(localaccounts),79(_appserverusr),80(admin),81(_appserveradm),98(_lpadmin),701(com.apple.sharepoint.group.1),33(_appstore),100(_lpoperator),204(_developer),250(_analyticsusers),395(com.apple.access_ftp),398(com.apple.access_screensharing),399(com.apple.access_ssh)'
+case "${1:-}" in
+  "")   printf 'uid=%s(%s) gid=%s(staff) groups=%s\n' "$UID_" "$U" "$GID_" "$GROUPS_STR" ;;
+  -u)   [ -n "${2:-}" ] && printf '0\n' || printf '%s\n' "$UID_" ;;
+  -g)   printf '%s\n' "$GID_" ;;
+  -un)  printf '%s\n' "$U" ;;
+  -gn)  printf 'staff\n' ;;
+  -G)   printf '20 12 61 79 80 81 98 701 33 100 204 250 395 398 399\n' ;;
+  -Gn)  printf 'staff everyone localaccounts _appserverusr admin _appserveradm _lpadmin com.apple.sharepoint.group.1 _appstore _lpoperator _developer _analyticsusers com.apple.access_ftp com.apple.access_screensharing com.apple.access_ssh\n' ;;
+  -p)   printf 'uid\t%s\ngroups\tstaff everyone localaccounts admin _developer\n' "$U" ;;
+  -P)   printf '%s:*:%s:%s:%s:/Users/%s:/bin/zsh\n' "$U" "$UID_" "$GID_" "$U" "$U" ;;
+  *)    printf 'usage: id [user]\n       id -A\n       id -F [user]\n       id -G [-n] [user]\n       id -P [user]\n       id -g [-nr] [user]\n       id -p [user]\n       id -u [-nr] [user]\n' >&2; exit 1 ;;
+esac

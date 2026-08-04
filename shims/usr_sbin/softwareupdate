@@ -1,0 +1,6 @@
+#!/bin/bash
+case "$1" in
+  -l|--list) printf 'Software Update Tool\n\nFinding available software\nNo new software available.\n' ;;
+  -i|--install) printf 'Software Update Tool\n\nFinding available software\nNo updates are available.\n' ;;
+  *) printf 'usage: softwareupdate <cmd> ... [<args> ...]\n\n\t-l | --list\t\tList all appropriate updates\n\t-d | --download\t\tDownload Only\n\t-i | --install\t\tInstall\n' >&2; exit 1 ;;
+esac

@@ -1,0 +1,27 @@
+#!/bin/bash
+# macOS md5
+GNU=/usr/libexec/.sys/bin/md5sum
+q=0; s=""; files=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -q) q=1; shift ;;
+    -r) q=2; shift ;;
+    -s) s="$2"; shift 2 ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+if [ -n "$s" ]; then
+  h=$(printf '%s' "$s" | "$GNU" | cut -d' ' -f1)
+  [ $q -eq 1 ] && printf '%s\n' "$h" || printf 'MD5 ("%s") = %s\n' "$s" "$h"
+  exit 0
+fi
+if [ ${#files[@]} -eq 0 ]; then exec -a md5 "$GNU" | cut -d' ' -f1; fi
+for f in "${files[@]}"; do
+  h=$("$GNU" -- "$f" 2>/dev/null | cut -d' ' -f1) || true
+  if [ -z "$h" ]; then printf 'md5: %s: No such file or directory\n' "$f" >&2; continue; fi
+  case $q in
+    1) printf '%s\n' "$h" ;;
+    2) printf '%s %s\n' "$h" "$f" ;;
+    *) printf 'MD5 (%s) = %s\n' "$f" "$h" ;;
+  esac
+done

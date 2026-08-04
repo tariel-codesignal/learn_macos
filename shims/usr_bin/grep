@@ -1,0 +1,10 @@
+#!/bin/bash
+# BSD grep: no -P / --perl-regexp
+GNU=/usr/libexec/.sys/bin/grep
+for a in "$@"; do
+  case "$a" in
+    --perl-regexp) printf 'grep: unrecognized option `--perl-regexp'"'"'\nusage: grep [-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] [-A num] [-B num] [-C[num]]\n\t[-e pattern] [-f file] [--binary-files=value] [--color=when]\n\t[pattern] [file ...]\n' >&2; exit 2 ;;
+    -[a-zA-Z]*) case "$a" in *P*) [ "${a:0:2}" = "--" ] || { printf 'grep: illegal option -- P\nusage: grep [-abcdDEFGHhIiJLlMmnOopqRSsUVvwXxZz] [-A num] [-B num] [-C[num]]\n\t[-e pattern] [-f file] [--binary-files=value] [--color=when]\n\t[pattern] [file ...]\n' >&2; exit 2; } ;; esac ;;
+  esac
+done
+exec -a grep "$GNU" "$@"

@@ -1,0 +1,18 @@
+#!/bin/bash
+declare -A K=(
+  [hw.ncpu]=10 [hw.physicalcpu]=10 [hw.logicalcpu]=10
+  [hw.memsize]=17179869184 [hw.pagesize]=16384 [hw.model]=Mac15,3
+  [machdep.cpu.brand_string]="Apple M3" [machdep.cpu.core_count]=10
+  [kern.hostname]=Learners-MacBook-Pro.local [kern.ostype]=Darwin
+  [kern.osrelease]=24.5.0 [kern.osproductversion]=15.5 [kern.maxfiles]=245760
+)
+nameonly=0; args=()
+for a in "$@"; do case "$a" in -n) nameonly=1 ;; -a) for k in "${!K[@]}"; do printf '%s: %s\n' "$k" "${K[$k]}"; done; exit 0 ;; -*) ;; *) args+=("$a") ;; esac; done
+[ ${#args[@]} -eq 0 ] && { printf 'usage: sysctl [-bdehiNnoRrRqTWx] [-f filename] name[=value] ...\n' >&2; exit 1; }
+rc=0
+for a in "${args[@]}"; do
+  v="${K[$a]}"
+  if [ -z "$v" ]; then printf 'sysctl: unknown oid '"'"'%s'"'"'\n' "$a" >&2; rc=1; continue; fi
+  [ $nameonly -eq 1 ] && printf '%s\n' "$v" || printf '%s: %s\n' "$a" "$v"
+done
+exit $rc

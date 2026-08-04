@@ -1,0 +1,3 @@
+#!/bin/bash
+[ -f "$HOME/Library/Caches/.pasteboard" ] && cat "$HOME/Library/Caches/.pasteboard"
+exit 0

@@ -1,0 +1,12 @@
+#!/bin/bash
+# BSD xargs: no -r / -d / --*
+GNU=/usr/libexec/.sys/bin/xargs
+for a in "$@"; do
+  case "$a" in
+    --*) printf 'xargs: illegal option -- -\nusage: xargs [-0opt] [-E eofstr] [-I replstr [-R replacements] [-S replsize]]\n             [-J replstr] [-L number] [-n number [-x]] [-P maxprocs]\n             [-s size] [utility [argument ...]]\n' >&2; exit 1 ;;
+    -*) case "$a" in
+          *r*|*d*) printf 'xargs: illegal option -- %s\n' "$(printf '%s' "$a" | tr -cd 'rd' | cut -c1)" >&2; exit 1 ;;
+        esac ;;
+  esac
+done
+exec -a xargs "$GNU" "$@"

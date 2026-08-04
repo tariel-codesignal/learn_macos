@@ -1,0 +1,9 @@
+#!/bin/bash
+# BSD readlink: no -f / -e / -m
+GNU=/usr/libexec/.sys/bin/readlink
+for a in "$@"; do
+  case "$a" in
+    -f|-e|-m|--*) printf 'readlink: illegal option -- %s\nusage: readlink [-n] [file ...]\n' "${a#-}" >&2; exit 1 ;;
+  esac
+done
+exec -a readlink "$GNU" "$@"

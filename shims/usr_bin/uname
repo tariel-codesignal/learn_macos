@@ -1,0 +1,23 @@
+#!/bin/bash
+S=Darwin; N="$(cat /etc/hostname 2>/dev/null || echo Learners-MacBook-Pro.local)"; R=24.5.0
+V='Darwin Kernel Version 24.5.0: Tue Apr 22 19:54:49 PDT 2025; root:xnu-11417.121.6~2/RELEASE_ARM64_T6031'
+M=arm64; P=arm
+[ $# -eq 0 ] && { printf '%s\n' "$S"; exit 0; }
+out=""
+add() { out="${out:+$out }$1"; }
+for a in "$@"; do
+  case "$a" in
+    -a) printf '%s %s %s %s %s\n' "$S" "$N" "$R" "$V" "$M"; exit 0 ;;
+    -*) f="${a#-}"
+        while [ -n "$f" ]; do
+          c="${f:0:1}"; f="${f:1}"
+          case "$c" in
+            s) add "$S" ;; n) add "$N" ;; r) add "$R" ;; v) add "$V" ;;
+            m) add "$M" ;; p) add "$P" ;;
+            *) printf 'uname: illegal option -- %s\nusage: uname [-amnoprsv]\n' "$c" >&2; exit 1 ;;
+          esac
+        done ;;
+    *) printf 'usage: uname [-amnoprsv]\n' >&2; exit 1 ;;
+  esac
+done
+printf '%s\n' "$out"

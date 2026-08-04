@@ -1,0 +1,45 @@
+#!/bin/bash
+PY=/usr/bin/python3
+mode=""; files=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|-lint|-convert) mode="$1"; [ "$1" = "-convert" ] && shift; shift ;;
+    -*) shift ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+[ ${#files[@]} -eq 0 ] && { printf 'plutil: No files specified.\n' >&2; exit 1; }
+for f in "${files[@]}"; do
+  [ -f "$f" ] || { printf '%s: No such file or directory\n' "$f" >&2; exit 1; }
+  case "$mode" in
+    -lint) "$PY" -c 'import plistlib,sys; plistlib.load(open(sys.argv[1],"rb"))' "$f" 2>/dev/null \
+             && printf '%s: OK\n' "$f" || { printf '%s: Property List error\n' "$f" >&2; exit 1; } ;;
+    *) "$PY" - "$f" <<'PY'
+import plistlib, sys
+def emit(o, ind=0):
+    p = "  " * ind
+    if isinstance(o, dict):
+        print("{")
+        for k in o:
+            sys.stdout.write(p + "  " + '"%s" => ' % k); emit(o[k], ind + 1)
+        print(p + "}")
+    elif isinstance(o, list):
+        print("[")
+        for i, v in enumerate(o):
+            sys.stdout.write(p + "  %d => " % i); emit(v, ind + 1)
+        print(p + "]")
+    elif isinstance(o, bool):
+        print("true" if o else "false")
+    elif isinstance(o, (int, float)):
+        print(o)
+    else:
+        print('"%s"' % o)
+try:
+    with open(sys.argv[1], "rb") as fh:
+        emit(plistlib.load(fh))
+except Exception:
+    print("%s: Property List error" % sys.argv[1], file=sys.stderr); sys.exit(1)
+PY
+    ;;
+  esac
+done

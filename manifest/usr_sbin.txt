@@ -1,0 +1,7 @@
+arp
+chown
+chroot
+netstat
+route
+traceroute6
+visudo

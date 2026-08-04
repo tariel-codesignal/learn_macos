@@ -1,0 +1,63 @@
+#!/bin/bash
+# open(1). Nothing can actually be launched here, so the job is to resolve
+# arguments exactly as macOS does and produce its errors: -a takes an
+# application name looked up in the app directories, -b takes a bundle id, and
+# anything left over is a file that has to exist.
+USAGE='Usage: open [-e] [-t] [-f] [-F] [-W] [-R] [-n] [-g] [-h] [-s <sdk>] [-b <bundle identifier>] [-a <application>] [filenames] [--args arguments]'
+[ $# -eq 0 ] && { printf '%s\n' "$USAGE" >&2; exit 1; }
+
+APPDIRS=(/Applications /System/Applications /System/Applications/Utilities /Users/Learner/Applications)
+
+find_app() { # find_app <name> -> 0 if an .app bundle matches
+  local want="$1" d b
+  # an explicit path to a bundle
+  case "$want" in
+    */*) [ -d "$want" ] && return 0; [ -d "$want.app" ] && return 0; return 1 ;;
+  esac
+  for d in "${APPDIRS[@]}"; do
+    [ -d "$d" ] || continue
+    for b in "$d"/*.app; do
+      [ -d "$b" ] || continue
+      b="${b##*/}"; b="${b%.app}"
+      # macOS matches the app name case-insensitively
+      if [ "${b,,}" = "${want,,}" ] || [ "${b,,}" = "${want%.app,,}" ]; then
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+APP=""; BUNDLE=""; FILES=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --args) shift; break ;;
+    -a) shift; [ $# -gt 0 ] || { printf '%s\n' "$USAGE" >&2; exit 1; }; APP="$1" ;;
+    -b) shift; [ $# -gt 0 ] || { printf '%s\n' "$USAGE" >&2; exit 1; }; BUNDLE="$1" ;;
+    -s) shift ;;
+    -h) shift ;;
+    --) shift; while [ $# -gt 0 ]; do FILES+=("$1"); shift; done; break ;;
+    -*) : ;;                                  # -e -t -f -F -W -R -n -g etc.
+    *)  FILES+=("$1") ;;
+  esac
+  shift
+done
+
+if [ -n "$APP" ] && ! find_app "$APP"; then
+  printf "Unable to find application named '%s'\n" "$APP" >&2
+  exit 1
+fi
+
+if [ -n "$BUNDLE" ] && ! grep -qrl "$BUNDLE" "${APPDIRS[@]}" --include=Info.plist 2>/dev/null; then
+  printf 'Unable to find bundle with identifier %s\n' "$BUNDLE" >&2
+  exit 1
+fi
+
+for f in "${FILES[@]}"; do
+  case "$f" in
+    http://*|https://*|ftp://*|mailto:*|file://*) continue ;;
+  esac
+  [ -e "$f" ] || { printf 'The file %s does not exist.\n' "$f" >&2; exit 1; }
+done
+
+exit 0

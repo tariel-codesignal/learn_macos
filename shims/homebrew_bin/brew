@@ -1,0 +1,149 @@
+#!/bin/bash
+# Homebrew simulator. Keeps an installed-formula database under the Cellar and
+# links a real host binary into the prefix whenever one happens to exist, so
+# `brew install wget && wget --version` behaves.
+PREFIX=/opt/homebrew
+CELLAR=$PREFIX/Cellar
+DB=$PREFIX/var/homebrew/installed
+HOSTBIN=/usr/libexec/.sys/bin
+VERSION="4.5.8"
+mkdir -p "$CELLAR" "$PREFIX/bin" "$(dirname "$DB")" 2>/dev/null
+touch "$DB" 2>/dev/null
+
+# name|version|description
+CATALOG='
+bat|0.25.0|Clone of cat(1) with syntax highlighting and Git integration
+cmake|3.31.6|Cross-platform make
+coreutils|9.7|GNU File, Shell, and Text utilities
+curl|8.13.0|Get a file from an HTTP, HTTPS or FTP server
+fd|10.2.0|Simple, fast and user-friendly alternative to find
+ffmpeg|7.1.1|Play, record, convert, and stream audio and video
+fzf|0.61.1|Command-line fuzzy finder written in Go
+gh|2.70.0|GitHub command-line tool
+git|2.49.0|Distributed revision control system
+gnu-sed|4.9|GNU implementation of the famous stream editor
+go|1.24.2|Open source programming language to build simple/reliable/efficient software
+htop|3.4.1|Improved top (interactive process viewer)
+jq|1.7.1|Lightweight and flexible command-line JSON processor
+make|4.4.1|Utility for directing compilation
+neovim|0.11.1|Ambitious Vim-fork focused on extensibility and agility
+node|23.11.0|Platform built on V8 to build network applications
+openssl@3|3.5.0|Cryptography and SSL/TLS Toolkit
+pkg-config|0.29.2|Manage compile and link flags for libraries
+python@3.13|3.13.3|Interpreted, interactive, object-oriented programming language
+ripgrep|14.1.1|Search tool like grep and The Silver Searcher
+rsync|3.4.1|Utility that provides fast incremental file transfer
+sqlite|3.49.1|Command-line interface for SQLite
+tmux|3.5a|Terminal multiplexer
+tree|2.2.1|Display directories as trees (with optional color/HTML output)
+watch|4.0.4|Executes a program periodically, showing output fullscreen
+wget|1.25.0|Internet file retriever
+zsh|5.9|UNIX shell (command interpreter)
+'
+
+lookup() { printf '%s\n' "$CATALOG" | awk -F'|' -v n="$1" '$1==n{print; exit}'; }
+installed() { grep -qx "$1" "$DB" 2>/dev/null; }
+# formula -> host binary name (differs for a few)
+hostname_for() {
+  case "$1" in
+    ripgrep) printf 'rg' ;;
+    gnu-sed) printf 'sed' ;;
+    openssl@3) printf 'openssl' ;;
+    python@3.13) printf 'python3' ;;
+    neovim) printf 'nvim' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+cmd="${1:-}"; shift 2>/dev/null || true
+
+case "$cmd" in
+  --version|-v)
+    printf 'Homebrew %s\n' "$VERSION" ;;
+
+  --prefix)
+    if [ -n "$1" ]; then
+      installed "$1" && printf '%s/opt/%s\n' "$PREFIX" "$1" || { printf 'Error: No available formula with the name "%s".\n' "$1" >&2; exit 1; }
+    else printf '%s\n' "$PREFIX"; fi ;;
+
+  --cellar) printf '%s\n' "$CELLAR" ;;
+
+  --repository|--repo) printf '%s\n' "$PREFIX" ;;
+
+  list|ls)
+    if [ -s "$DB" ]; then sort "$DB" | column -c 80 2>/dev/null || sort "$DB"; fi ;;
+
+  info|abv)
+    line=$(lookup "$1")
+    [ -z "$line" ] && { printf 'Error: No available formula with the name "%s".\n' "$1" >&2; exit 1; }
+    IFS='|' read -r n v d <<<"$line"
+    printf '==> %s: stable %s\n%s\nhttps://formulae.brew.sh/formula/%s\n' "$n" "$v" "$d" "$n"
+    if installed "$n"; then
+      printf 'Installed\n%s/%s/%s (12 files, 2.4MB) *\n  Poured from bottle\n' "$CELLAR" "$n" "$v"
+    else
+      printf 'Not installed\n'
+    fi ;;
+
+  search)
+    if [ -z "$1" ]; then printf '%s\n' "$CATALOG" | awk -F'|' 'NF{print $1}' | sort | column -c 80 2>/dev/null; exit 0; fi
+    hits=$(printf '%s\n' "$CATALOG" | awk -F'|' -v q="$1" 'NF && index($1,q){print $1}' | sort)
+    if [ -z "$hits" ]; then printf 'No formulae or casks found for "%s".\n' "$1" >&2; exit 1; fi
+    printf '==> Formulae\n'; printf '%s\n' "$hits" | column -c 80 2>/dev/null || printf '%s\n' "$hits" ;;
+
+  install)
+    [ -z "$1" ] && { printf 'Error: Invalid usage: This command requires at least 1 formula argument.\n' >&2; exit 1; }
+    for f in "$@"; do
+      case "$f" in --*) continue ;; esac
+      line=$(lookup "$f")
+      if [ -z "$line" ]; then
+        printf 'Warning: No available formula with the name "%s". Did you mean to run `brew search %s`?\n' "$f" "$f" >&2
+        exit 1
+      fi
+      IFS='|' read -r n v d <<<"$line"
+      if installed "$n"; then
+        printf 'Warning: %s %s is already installed and up-to-date.\nTo reinstall %s, run:\n  brew reinstall %s\n' "$n" "$v" "$v" "$n"
+        continue
+      fi
+      printf '==> Downloading https://ghcr.io/v2/homebrew/core/%s/manifests/%s\n' "$n" "$v"
+      printf '==> Fetching %s\n' "$n"
+      printf '==> Downloading https://ghcr.io/v2/homebrew/core/%s/blobs/sha256:%s\n' "$n" "$(printf '%s%s' "$n" "$v" | md5 -q 2>/dev/null || echo 0123456789abcdef)"
+      printf '==> Pouring %s--%s.arm64_sequoia.bottle.tar.gz\n' "$n" "$v"
+      mkdir -p "$CELLAR/$n/$v/bin"
+      printf '%s\n' "$n" >> "$DB"
+      hb=$(hostname_for "$n")
+      if [ -x "$HOSTBIN/$hb" ]; then ln -sf "$HOSTBIN/$hb" "$PREFIX/bin/$hb" 2>/dev/null; fi
+      printf '🍺  %s/%s/%s: 12 files, 2.4MB\n' "$CELLAR" "$n" "$v"
+    done ;;
+
+  uninstall|remove|rm)
+    [ -z "$1" ] && { printf 'Error: Invalid usage: This command requires at least 1 installed formula argument.\n' >&2; exit 1; }
+    for f in "$@"; do
+      if ! installed "$f"; then printf 'Error: No such keg: %s/%s\n' "$CELLAR" "$f" >&2; exit 1; fi
+      v=$(lookup "$f" | cut -d'|' -f2)
+      grep -vx "$f" "$DB" > "$DB.tmp" && mv "$DB.tmp" "$DB"
+      rm -rf "${CELLAR:?}/$f"
+      rm -f "$PREFIX/bin/$(hostname_for "$f")"
+      printf 'Uninstalling %s/%s/%s... (12 files, 2.4MB)\n' "$CELLAR" "$f" "$v"
+    done ;;
+
+  update)
+    printf 'Already up-to-date.\n' ;;
+
+  upgrade)
+    printf '==> Fetching outdated formulae\nAlready up-to-date.\n' ;;
+
+  outdated)
+    ;;
+
+  doctor|dr)
+    printf 'Your system is ready to brew.\n' ;;
+
+  config)
+    printf 'HOMEBREW_VERSION: %s\nHOMEBREW_PREFIX: %s\nHOMEBREW_CELLAR: %s\nmacOS: 15.5-arm64\nCLT: 16.4.0.0.1.1747106510\nXcode: N/A\n' "$VERSION" "$PREFIX" "$CELLAR" ;;
+
+  help|"")
+    printf 'Example usage:\n  brew search TEXT|/REGEX/\n  brew info [FORMULA|CASK...]\n  brew install FORMULA|CASK...\n  brew update\n  brew upgrade [FORMULA|CASK...]\n  brew uninstall FORMULA|CASK...\n  brew list [FORMULA|CASK...]\n' ;;
+
+  *)
+    printf 'Error: Unknown command: %s\n' "$cmd" >&2; exit 1 ;;
+esac

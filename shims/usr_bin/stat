@@ -1,0 +1,27 @@
+#!/bin/bash
+# BSD stat: -f FORMAT / -x, no GNU -c
+GNU=/usr/libexec/.sys/bin/stat
+fmt=""; args=(); files=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -f) fmt="$2"; shift 2 ;;
+    -c|--*) printf 'stat: illegal option -- %s\n' "${1#-}" >&2
+            printf 'usage: stat [-FLnq] [-f format | -l | -r | -s | -x] [-t timefmt] [file ...]\n' >&2; exit 1 ;;
+    -x) fmt="__X__"; shift ;;
+    -[Llnqrs]) args+=("$1"); shift ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+[ ${#files[@]} -eq 0 ] && files=(-)
+if [ "$fmt" = "__X__" ]; then
+  for f in "${files[@]}"; do "$GNU" --printf='  File: "%n"\n  Size: %s         FileType: %F\n  Mode: (%a/%A)         Uid: (%5u/%8U)  Gid: (%5g/%8G)\nDevice: %d   Inode: %i    Links: %h\nAccess: %x\nModify: %y\nChange: %z\n' -- "$f" || exit 1; done
+  exit 0
+fi
+if [ -z "$fmt" ]; then
+  exec -a stat "$GNU" --printf='%d %i %A %h %U %G %d %s "%x" "%y" "%z" 4096 %b %n\n' -- "${files[@]}"
+fi
+g="$fmt"
+g="${g//%Sp/%A}"; g="${g//%Su/%U}"; g="${g//%Sg/%G}"; g="${g//%Sm/%y}"
+g="${g//%HT/%F}";  g="${g//%z/%s}"; g="${g//%N/%n}";  g="${g//%m/%Y}"
+g="${g//%p/%f}";   g="${g//%l/%h}"; g="${g//%a/%X}";  g="${g//%c/%Z}"
+exec -a stat "$GNU" --printf="$g\n" -- "${files[@]}"

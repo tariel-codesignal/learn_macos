@@ -1,0 +1,20 @@
+#!/bin/bash
+# macOS df (APFS volume layout)
+GNU=/usr/libexec/.sys/bin/df
+human=0; for a in "$@"; do case "$a" in -*h*) human=1 ;; esac; done
+read -r _ size used avail _ <<<"$("$GNU" -k / | tail -1)"
+if [ $human -eq 1 ]; then
+  h() { awk -v k="$1" 'BEGIN{ g=k/1048576; if (g>=1) printf "%.0fGi", g; else printf "%.0fMi", k/1024 }'; }
+  printf 'Filesystem       Size   Used  Avail Capacity iused      ifree %%iused  Mounted on\n'
+  printf '/dev/disk3s1s1  %6s %6s %6s   %3d%%  %6s %10s   %2d%%   /\n' "$(h "$size")" "$(h "$used")" "$(h "$avail")" "$((used*100/size))" "404k" "1.9G" 0
+  printf 'devfs            195Ki  195Ki    0Bi   100%%     676          0  100%%   /dev\n'
+  printf '/dev/disk3s6    %6s   20Ki %6s     1%%       1        1.9G    0%%   /System/Volumes/VM\n' "$(h "$size")" "$(h "$avail")"
+  printf '/dev/disk3s2    %6s  7.5Mi %6s     1%%      55        1.9G    0%%   /System/Volumes/Preboot\n' "$(h "$size")" "$(h "$avail")"
+  printf '/dev/disk3s5    %6s %6s %6s   %3d%%  1.2M        1.9G    0%%   /System/Volumes/Data\n' "$(h "$size")" "$(h "$used")" "$(h "$avail")" "$((used*100/size))"
+  printf 'map auto_home      0Bi    0Bi    0Bi   100%%       0          0  100%%   /System/Volumes/Data/home\n'
+else
+  printf 'Filesystem     512-blocks      Used  Available Capacity iused      ifree %%iused  Mounted on\n'
+  printf '/dev/disk3s1s1 %10s %9s %10s   %3d%%  %6s %10s   %2d%%   /\n' "$((size*2))" "$((used*2))" "$((avail*2))" "$((used*100/size))" "404312" "1943210" 0
+  printf 'devfs                 390       390          0   100%%     676          0  100%%   /dev\n'
+  printf '/dev/disk3s5   %10s %9s %10s   %3d%%  1201843    1943210    0%%   /System/Volumes/Data\n' "$((size*2))" "$((used*2))" "$((avail*2))" "$((used*100/size))"
+fi

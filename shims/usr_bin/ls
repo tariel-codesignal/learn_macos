@@ -1,0 +1,128 @@
+#!/bin/bash
+# BSD/Darwin-flavored ls.
+#  - accepts BSD-only flags (-G, -@, -O, -T, -e, -W, -%) that GNU ls rejects
+#  - rejects GNU long options the way BSD does
+#  - reformats -l output to BSD spacing and drops GNU's SELinux dot
+#  - reports -l totals in 512-byte blocks, as BSD does
+#  - keeps Linux-only entries out of a listing of /
+GNU=/usr/libexec/.sys/bin/ls
+GNUOPT=(--tabsize=0)
+HIDE_ROOT=" lib lib64 proc "
+
+usage() {
+  printf 'usage: ls [-@ABCFGHILOPRSTUWabcdefghiklmnopqrstuvwxy1%%,] [--color=when] [-D format]\n\t[file ...]\n' >&2
+  exit 1
+}
+
+# BSD lays -l out with two spaces between columns and no SELinux marker, and
+# counts totals in 512-byte blocks. Buffer the listing so columns can be
+# aligned across all of it, the way ls really does it.
+bsdify() {
+  awk '
+    function rpad(s, w) { while (length(s) < w) s = s " "; return s }
+    function lpad(s, w) { while (length(s) < w) s = " " s; return s }
+    function flush(  i) {
+      for (i = 1; i <= n; i++) {
+        if (kind[i] == "l")
+          print mode[i] "   " lpad(link[i], lw) " " rpad(own[i], ow) "  " \
+                rpad(grp[i], gw) "  " lpad(size[i], sw) " " when[i] " " name[i]
+        else
+          print raw[i]
+      }
+      n = 0; lw = ow = gw = sw = 0
+    }
+    /^total [0-9]+$/ { flush(); print "total " ($2 * 2); next }
+    {
+      c1 = substr($0, 1, 1); m11 = substr($0, 11, 1)
+      if (index("-dlcbps", c1) && c1 != "" && (m11 == "." || m11 == "+" || m11 == "@" || m11 == " ")) {
+        rest = substr($0, (m11 == " ") ? 11 : 12)
+        c = split(rest, f)
+        if (c >= 8) {
+          n++
+          mode[n] = substr($0, 1, 10); kind[n] = "l"
+          link[n] = f[1]; own[n] = f[2]; grp[n] = f[3]; size[n] = f[4]
+          when[n] = f[5] " " lpad(f[6], 2) " " lpad(f[7], 5)
+          nm = f[8]
+          for (i = 9; i <= c; i++) nm = nm " " f[i]
+          name[n] = nm
+          if (length(link[n]) > lw) lw = length(link[n])
+          if (length(own[n])  > ow) ow = length(own[n])
+          if (length(grp[n])  > gw) gw = length(grp[n])
+          if (length(size[n]) > sw) sw = length(size[n])
+          next
+        }
+      }
+      n++; kind[n] = "r"; raw[n] = $0
+    }
+    END { flush() }'
+}
+
+flags=(); opers=(); color=(); want_l=0; want_d=0; want_R=0; dotmode=""
+endopts=0
+for a in "$@"; do
+  if [ $endopts -eq 1 ]; then opers+=("$a"); continue; fi
+  case "$a" in
+    --) endopts=1 ;;
+    --color) color=(--color=auto) ;;
+    --color=*) color=(--color="${a#--color=}") ;;
+    --*) printf 'ls: illegal option -- -\n' >&2; usage ;;
+    -*)
+      rest="${a#-}"
+      keep=""
+      while [ -n "$rest" ]; do
+        c="${rest:0:1}"; rest="${rest:1}"
+        case "$c" in
+          G) color=(--color=auto) ;;
+          # BSD-only flags with no GNU equivalent - accept and ignore
+          @|O|P|T|W|e|%|,|v|y|U) ;;
+          l) want_l=1; keep="$keep$c" ;;
+          d) want_d=1; keep="$keep$c" ;;
+          R) want_R=1; keep="$keep$c" ;;
+          a) dotmode="a"; keep="$keep$c" ;;
+          A) [ -z "$dotmode" ] && dotmode="A"; keep="$keep$c" ;;
+          [ABCFHIKLSbcfghikmnopqrstux1]) keep="$keep$c" ;;
+          *) printf 'ls: illegal option -- %s\n' "$c" >&2; usage ;;
+        esac
+      done
+      [ -n "$keep" ] && flags+=("-$keep")
+      ;;
+    *) opers+=("$a") ;;
+  esac
+done
+
+# Is this a listing of / that needs Linux-only entries filtered out?
+filter=0
+if [ $want_d -eq 0 ] && [ $want_R -eq 0 ]; then
+  if [ ${#opers[@]} -eq 0 ]; then
+    [ "$PWD" = "/" ] && filter=1
+  elif [ ${#opers[@]} -eq 1 ]; then
+    [ "$(cd -- "${opers[0]}" 2>/dev/null && pwd)" = "/" ] && filter=1
+  fi
+fi
+
+if [ $filter -eq 1 ]; then
+  entries=()
+  [ "$dotmode" = "a" ] && entries+=("." "..")
+  raw="$("$GNU" "${GNUOPT[@]}" -1 ${dotmode:+-A} -- / 2>/dev/null)"
+  while IFS= read -r e; do
+    [ -z "$e" ] && continue
+    case "$HIDE_ROOT" in *" $e "*) continue ;; esac
+    entries+=("$e")
+  done <<< "$raw"
+  cd / || exit 1
+  {
+    if [ $want_l -eq 1 ]; then
+      total=$("$GNU" -l -- / 2>/dev/null | sed -n '1s/^total //p')
+      [ -n "$total" ] && printf 'total %s\n' "$total"
+    fi
+    "$GNU" "${GNUOPT[@]}" -d "${color[@]}" "${flags[@]}" -- "${entries[@]}"
+  } | { [ $want_l -eq 1 ] && bsdify || cat; }
+  exit 0
+fi
+
+if [ $want_l -eq 1 ]; then
+  "$GNU" "${GNUOPT[@]}" "${color[@]}" "${flags[@]}" ${opers[@]+"${opers[@]}"} | bsdify
+  exit "${PIPESTATUS[0]}"
+fi
+
+exec -a ls "$GNU" "${GNUOPT[@]}" "${color[@]}" "${flags[@]}" ${opers[@]+"${opers[@]}"}

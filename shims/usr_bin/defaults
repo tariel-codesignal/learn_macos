@@ -1,0 +1,44 @@
+#!/bin/bash
+# Minimal macOS `defaults`
+DB="$HOME/Library/Preferences"
+mkdir -p "$DB" 2>/dev/null
+dfile() { printf '%s/%s.defaults' "$DB" "$1"; }
+cmd="$1"; shift 2>/dev/null || true
+case "$cmd" in
+  domains)
+    ls "$DB" 2>/dev/null | sed -n 's/\.defaults$//p' | paste -sd, - ; printf '\n' ;;
+  read)
+    if [ -z "$1" ]; then for d in "$DB"/*.defaults; do [ -f "$d" ] || continue; done; exit 0; fi
+    f=$(dfile "$1")
+    [ -f "$f" ] || { printf 'Domain %s does not exist\n' "$1" >&2; exit 1; }
+    if [ -n "$2" ]; then
+      v=$(awk -F'\t' -v k="$2" '$1==k{print $2; found=1} END{exit !found}' "$f") \
+        || { printf 'The domain/default pair of (%s, %s) does not exist\n' "$1" "$2" >&2; exit 1; }
+      printf '%s\n' "$v"
+    else
+      printf '{\n'
+      awk -F'\t' '{ if ($2 ~ /^[0-9]+$/) printf "    %s = %s;\n", $1, $2; else printf "    %s = \"%s\";\n", $1, $2 }' "$f"
+      printf '}\n'
+    fi ;;
+  read-type)
+    f=$(dfile "$1")
+    v=$(awk -F'\t' -v k="$2" '$1==k{print $2}' "$f" 2>/dev/null)
+    [ -z "$v" ] && { printf 'The domain/default pair of (%s, %s) does not exist\n' "$1" "$2" >&2; exit 1; }
+    case "$v" in ''|*[!0-9]*) printf 'Type is string\n' ;; *) printf 'Type is integer\n' ;; esac ;;
+  write)
+    dom="$1"; key="$2"; shift 2
+    case "$1" in -bool|-boolean) shift; case "$1" in true|yes|1|YES) val=1 ;; *) val=0 ;; esac ;;
+                 -int|-integer|-float|-string) shift; val="$1" ;;
+                 *) val="$1" ;; esac
+    f=$(dfile "$dom"); touch "$f"
+    awk -F'\t' -v k="$key" '$1!=k' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    printf '%s\t%s\n' "$key" "$val" >> "$f" ;;
+  delete)
+    f=$(dfile "$1")
+    [ -f "$f" ] || { printf 'Domain %s does not exist\n' "$1" >&2; exit 1; }
+    if [ -n "$2" ]; then awk -F'\t' -v k="$2" '$1!=k' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    else rm -f "$f"; fi ;;
+  *)
+    printf 'Command line interface to a user'"'"'s defaults.\nSyntax:\n\ndefaults [-currentHost | -host <hostname>] followed by one of the following:\n\n  read                                 shows all defaults\n  read <domain>                        shows defaults for given domain\n  write <domain> <key> <value>         writes key for domain\n  delete <domain> [<key>]              deletes domain or key\n  domains                              lists all domains\n' >&2
+    exit 1 ;;
+esac

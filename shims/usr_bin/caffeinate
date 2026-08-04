@@ -1,0 +1,9 @@
+#!/bin/bash
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -t) shift 2 ;;
+    -*) shift ;;
+    *) exec "$@" ;;
+  esac
+done
+exit 0

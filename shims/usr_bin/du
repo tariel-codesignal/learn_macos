@@ -1,0 +1,5 @@
+#!/bin/bash
+# BSD du: default unit is 512-byte blocks
+GNU=/usr/libexec/.sys/bin/du
+for a in "$@"; do case "$a" in -*h*|-*k*|-*m*|-*g*|--*) exec -a du "$GNU" "$@" ;; esac; done
+exec -a du "$GNU" --block-size=512 "$@"

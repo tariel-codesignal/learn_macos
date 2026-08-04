@@ -1,0 +1,5 @@
+#!/bin/bash
+case "$1" in
+  status) printf 'System Integrity Protection status: enabled.\n' ;;
+  *) printf 'csrutil: Invalid command "%s".\nUsage: csrutil <command>\n\nAvailable commands:\n\n    clear\n    disable\n    enable\n    status\n' "$1" >&2; exit 1 ;;
+esac

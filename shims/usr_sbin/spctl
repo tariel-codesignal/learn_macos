@@ -1,0 +1,6 @@
+#!/bin/bash
+case "$1" in
+  --status) printf 'assessments enabled\n' ;;
+  --assess) printf '%s: accepted\n' "${!#}" ;;
+  *) printf 'spctl: invalid option\n' >&2; exit 1 ;;
+esac

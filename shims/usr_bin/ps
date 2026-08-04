@@ -1,0 +1,36 @@
+#!/bin/bash
+# macOS ps. /proc inside the chroot is the host's, so a real ps would leak the
+# container's Linux process list; report a plausible Mac one instead.
+SHPID="${PPID:-915}"
+ST="$(LC_ALL=C date '+%l:%M%p' | tr -d ' ')"
+long=0; all=0; ef=0
+for a in "$@"; do
+  case "$a" in
+    *e*f*|-ef) ef=1; all=1 ;;
+    aux|-aux|auxww|axo) long=1; all=1 ;;
+    -A|-a|ax|-ax) all=1 ;;
+  esac
+done
+if [ $ef -eq 1 ]; then
+  printf '  UID   PID  PPID   C STIME   TTY           TIME CMD\n'
+  printf '    0     1     0   0 %7s ??         0:14.23 /sbin/launchd\n' "$ST"
+  printf '    0   102     1   0 %7s ??         0:03.11 /usr/libexec/logd\n' "$ST"
+  printf '    0   112     1   0 %7s ??         0:01.87 /usr/libexec/opendirectoryd\n' "$ST"
+  printf '  501   488     1   0 %7s ??         0:09.42 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder\n' "$ST"
+  printf '  501   501     1   0 %7s ??         0:06.75 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock\n' "$ST"
+  printf '  501   %5s   488   0 %7s ttys000    0:00.05 -zsh\n' "$SHPID" "$ST"
+  exit 0
+fi
+if [ $long -eq 1 ]; then
+  printf 'USER               PID  %%CPU %%MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n'
+  printf 'root                 1   0.0   0.1 410612544  20304   ??  Ss   %8s   0:14.23 /sbin/launchd\n' "$ST"
+  printf 'root               102   0.0   0.1 410318592  11248   ??  Ss   %8s   0:03.11 /usr/libexec/logd\n' "$ST"
+  printf 'root               112   0.0   0.1 410352128   9632   ??  Ss   %8s   0:01.87 /usr/libexec/opendirectoryd\n' "$ST"
+  printf 'Learner            488   0.2   0.9 412998144 152304   ??  S    %8s   0:09.42 /System/Library/CoreServices/Finder.app/Contents/MacOS/Finder\n' "$ST"
+  printf 'Learner            501   0.1   0.6 412744192  98112   ??  S    %8s   0:06.75 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock\n' "$ST"
+  printf 'Learner         %6s   0.0   0.0 410276352   3120 s000  S    %8s   0:00.05 -zsh\n' "$SHPID" "$ST"
+  exit 0
+fi
+printf '  PID TTY           TIME CMD\n'
+printf '%5s ttys000    0:00.05 -zsh\n' "$SHPID"
+exit 0

@@ -1,0 +1,7 @@
+#!/bin/bash
+case "$1" in
+  -p|--print-path) printf '/Library/Developer/CommandLineTools\n' ;;
+  --install) printf 'xcode-select: note: Command Line Tools are already installed, use "Software Update" in System Settings to install updates\n' ;;
+  -v|--version) printf 'xcode-select version 2409.\n' ;;
+  *) printf 'Usage: xcode-select [options]\n\nPrint or change the path to the active developer directory.\n' >&2; exit 1 ;;
+esac

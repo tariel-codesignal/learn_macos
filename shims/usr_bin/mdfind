@@ -1,0 +1,14 @@
+#!/bin/bash
+GNU=/usr/libexec/.sys/bin/find
+name=""; onlyin="$HOME"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -name) name="$2"; shift 2 ;;
+    -onlyin) onlyin="$2"; shift 2 ;;
+    -*) shift ;;
+    *) name="$1"; shift ;;
+  esac
+done
+[ -z "$name" ] && { printf 'mdfind: no query specified.\n' >&2; exit 1; }
+"$GNU" "$onlyin" -iname "*${name}*" -not -path '*/.*' 2>/dev/null
+exit 0

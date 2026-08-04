@@ -1,0 +1,17 @@
+#!/bin/bash
+# macOS file: system binaries report as Mach-O
+GNU=/usr/libexec/.sys/bin/file
+args=(); files=()
+for a in "$@"; do case "$a" in -*) args+=("$a") ;; *) files+=("$a") ;; esac; done
+for f in "${files[@]}"; do
+  real=$(cd "$(dirname -- "$f")" 2>/dev/null && printf '%s/%s' "$(pwd)" "$(basename -- "$f")")
+  case "$real" in
+    /bin/*|/sbin/*|/usr/bin/*|/usr/sbin/*|/usr/libexec/*|/opt/homebrew/bin/*)
+      if [ -f "$f" ] && [ -x "$f" ]; then
+        printf '%s: Mach-O 64-bit executable arm64\n' "$f"; continue
+      fi ;;
+  esac
+  "$GNU" ${args[@]+"${args[@]}"} -- "$f"
+done
+[ ${#files[@]} -eq 0 ] && exec -a file "$GNU" "$@"
+exit 0

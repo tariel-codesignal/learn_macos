@@ -1,0 +1,36 @@
+#!/bin/bash
+# BSD date: -v adjustments, -r, -j, -f; no GNU -d/--date
+GNU=/usr/libexec/.sys/bin/date
+usage() { printf 'usage: date [-jnRu] [-I[date|hours|minutes|seconds]] [-f input_fmt]\n            [-r filename|seconds] [-v[+|-]val[ymwdHMS]] ... [+output_fmt]\n' >&2; exit 1; }
+base=""; adj=(); out=(); infmt=""; val=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -d|--date|--date=*|--rfc-3339*|--iso-8601*)
+      printf 'date: illegal option -- %s\n' "$(printf '%s' "${1#-}" | cut -c1)" >&2; usage ;;
+    -v) adj+=("$2"); shift 2 ;;
+    -v*) adj+=("${1#-v}"); shift ;;
+    -r) base="$2"; shift 2 ;;
+    -f) infmt="$2"; shift 2 ;;
+    -j) shift ;;
+    -u) out+=(-u); shift ;;
+    -R) out+=(-R); shift ;;
+    +*) fmt="$1"; shift ;;
+    *) if [ -n "$infmt" ] && [ -z "$val" ]; then val="$1"; else base="$1"; fi; shift ;;
+  esac
+done
+spec=""
+if [ -n "$val" ]; then spec="$val"
+elif [ -n "$base" ]; then
+  if [ -f "$base" ]; then spec="@$("$GNU" -r "$base" +%s 2>/dev/null || stat -c %Y "$base")"
+  else spec="@$base"; fi
+fi
+[ -z "$spec" ] && spec="now"
+for a in "${adj[@]}"; do
+  n="${a%[ymwdHMS]}"; u="${a: -1}"
+  case "$u" in y) u=years ;; m) u=months ;; w) u=weeks ;; d) u=days ;;
+              H) u=hours ;; M) u=minutes ;; S) u=seconds ;; *) continue ;; esac
+  case "$n" in +*|-*) ;; *) n="+$n" ;; esac
+  spec="$spec $n $u"
+done
+[ -z "${fmt:-}" ] && fmt="+%a %b %e %H:%M:%S %Z %Y"
+exec -a date "$GNU" ${out[@]+"${out[@]}"} -d "$spec" "$fmt"

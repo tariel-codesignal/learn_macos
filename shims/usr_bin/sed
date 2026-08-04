@@ -1,0 +1,58 @@
+#!/bin/bash
+# BSD/Darwin-flavored sed.
+#  - -i takes a MANDATORY extension argument (the classic macOS gotcha)
+#  - rejects GNU long options
+GNU=/usr/libexec/.sys/bin/sed
+
+usage() {
+  printf 'usage: sed [-Ealnru] command [file ...]\n       sed [-Ealnru] [-e command] [-f command_file] [-i extension] [file ...]\n' >&2
+  exit 1
+}
+
+out=(); rest=(); have_script=0; inplace=0; ext=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --) shift; break ;;
+    --*) printf 'sed: illegal option -- -\n' >&2; usage ;;
+    -e) out+=(-e "$2"); have_script=1; shift 2 ;;
+    -f) out+=(-f "$2"); have_script=1; shift 2 ;;
+    -i) inplace=1; ext="$2"; shift 2 ;;      # BSD: extension is mandatory
+    -i*) inplace=1; ext="${1#-i}"; shift ;;
+    -[Ealnrus]*)
+      flag="${1#-}"; keep=""
+      while [ -n "$flag" ]; do
+        c="${flag:0:1}"; flag="${flag:1}"
+        case "$c" in
+          E|a|l|n|u|s) keep="$keep$c" ;;
+          r) keep="${keep}E" ;;
+          i) inplace=1; ext="$flag"; flag="" ;;
+          *) printf 'sed: illegal option -- %s\n' "$c" >&2; usage ;;
+        esac
+      done
+      [ -n "$keep" ] && out+=("-$keep")
+      shift ;;
+    -) rest+=("$1"); shift ;;
+    -*) printf 'sed: illegal option -- %s\n' "${1:1:1}" >&2; usage ;;
+    *) rest+=("$1"); shift ;;
+  esac
+done
+rest+=("$@")
+
+if [ $have_script -eq 0 ] && [ ${#rest[@]} -gt 0 ]; then
+  script="${rest[0]}"
+  # BSD swallowed the real script as -i's extension, so the filename is now
+  # being parsed as the script. Reproduce the error macOS gives.
+  if [ $inplace -eq 1 ] && [ -e "$script" ]; then
+    c="${script:0:1}"
+    case "$c" in
+      [abcdgGhHilnNpPqrstwxy=#{}\!]) printf 'sed: 1: "%s": extra characters after command\n' "$script" >&2 ;;
+      *) printf 'sed: 1: "%s": invalid command code %s\n' "$script" "$c" >&2 ;;
+    esac
+    exit 1
+  fi
+  out+=("$script")
+  rest=("${rest[@]:1}")
+fi
+
+[ $inplace -eq 1 ] && out=(-i"$ext" "${out[@]}")
+exec -a sed "$GNU" "${out[@]}" ${rest[@]+"${rest[@]}"}

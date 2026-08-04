@@ -1,0 +1,13 @@
+#!/bin/bash
+# This image ships no man pages. Fail the way a Mac fails on a missing page
+# rather than leaking Ubuntu's "system has been minimized" notice.
+GNU=/usr/libexec/.sys/bin/man
+[ $# -eq 0 ] && { printf 'What manual page do you want?\nFor example, try '"'"'man man'"'"'.\n' >&2; exit 1; }
+page="${!#}"
+out="$("$GNU" "$@" 2>/dev/null)"
+if [ -n "$out" ] && ! printf '%s' "$out" | head -3 | grep -q 'has been minimized'; then
+  printf '%s\n' "$out"
+  exit 0
+fi
+printf 'No manual entry for %s\n' "$page" >&2
+exit 1
