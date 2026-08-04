@@ -1,0 +1,7 @@
+#!/bin/bash
+# On Ubuntu these three are systemctl wrappers, so the host binaries would print
+# systemd's diagnostics into a Mac session. Refuse the way a Mac refuses an
+# unprivileged attempt. The wording is what macOS 15 prints for `shutdown`;
+# halt and reboot share BSD's super-user check and are assumed to match.
+printf '%s: NOT super-user\n' "${0##*/}" >&2
+exit 1

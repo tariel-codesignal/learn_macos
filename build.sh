@@ -63,6 +63,8 @@ mkdir -p "$R"/private/var/{db,folders,log,root,run,tmp,empty}
 mkdir -p "$R"/private/etc/{paths.d,ssl}
 mkdir -p "$R"/usr/{bin,sbin,share,lib,libexec,local}
 mkdir -p "$R"/usr/local/{bin,lib,share,opt}
+# on fpath, and present on a real Mac even when empty
+mkdir -p "$R"/usr/local/share/zsh/site-functions
 mkdir -p "$R"/usr/libexec/.sys/{bin,sbin}
 mkdir -p "$R"/opt/homebrew/{bin,sbin,Cellar,var/homebrew,opt}
 mkdir -p "$R"/opt/python
@@ -162,14 +164,50 @@ EOF
 # ------------------------------------------------------------------ zsh config
 # zsh lives at a relocated prefix; /etc/zshenv points it at its modules and
 # functions before anything else runs.
-cat > "$E/zshenv" <<'EOF'
+#
+# fpath needs one entry per vendored digest. A .zwc digest is consulted only
+# when fpath names the directory it was compiled from - the digest sits *beside*
+# that directory, which need not exist. So `fpath=(.../functions)` reaches
+# nothing: it looks for functions.zwc, and the directory itself holds only
+# digests. Generate the entries from the payload instead of hardcoding them, so
+# a re-vendored set cannot silently lose a suite. Where a digest and loose
+# function files share a directory, a digest miss falls back to the files, which
+# is what makes Completion/ work whichever way it was vendored.
+#
+# Newuser is deliberately left off: reaching zsh-newuser-install would let this
+# zsh offer its first-run configuration wizard, which no Mac does. enter.sh
+# blanks the newuser script for the same reason.
+FP=/System/Library/zsh/functions
+FP_ENTRIES=""
+for z in "$VEN"/zsh/functions/*.zwc "$VEN"/zsh/functions/Completion/*.zwc; do
+  [ -e "$z" ] || continue
+  zn="$(basename "$z" .zwc)"
+  [ "$zn" = "Newuser" ] && continue
+  case "$z" in
+    */Completion/*) FP_ENTRIES="$FP_ENTRIES $FP/Completion/$zn" ;;
+    *)              FP_ENTRIES="$FP_ENTRIES $FP/$zn" ;;
+  esac
+done
+
+cat > "$E/zshenv" <<EOF
 module_path=(/System/Library/zsh/modules)
-fpath=(/System/Library/zsh/functions /System/Library/zsh/functions/Completion)
+fpath=(/usr/local/share/zsh/site-functions$FP_ENTRIES)
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export SHELL=/bin/zsh
 export PAGER=less
 export NANORC=/System/Library/nano/nanorc
 export TMPDIR=/var/folders/qz/8k3n7x2d1r7g9v4mbqp0lqrc0000gn/T/
+
+# This zsh was built for Linux on x86-64; the Mac it impersonates runs Darwin on
+# Apple silicon. Completion functions and user scripts both branch on these, so
+# report what a 15.5 arm64 shell reports - it fixes \`echo \$OSTYPE\` and makes
+# zsh's own completers take their BSD paths. ZSH_VERSION is left alone on
+# purpose: compinit and friends branch on it, and claiming 5.9 could select a
+# code path this 5.8.1 binary cannot run.
+OSTYPE=darwin24.0
+VENDOR=apple
+MACHTYPE=arm64
+CPUTYPE=arm64
 EOF
 
 cat > "$E/zprofile" <<'EOF'
@@ -198,13 +236,57 @@ SAVEHIST=1000
 # Beep on error
 setopt BEEP
 
+# Use keycodes (generated via zkbd) if present, otherwise fallback on
+# values from terminfo
+if [[ -r ${ZDOTDIR:-$HOME}/.zkbd/${TERM}-${VENDOR} ]] ; then
+	source ${ZDOTDIR:-$HOME}/.zkbd/${TERM}-${VENDOR}
+else
+	zmodload -i zsh/terminfo 2>/dev/null
+	typeset -g -A key
+	typeset -A _keycap
+	_keycap=(
+		F1 kf1    F2 kf2    F3 kf3    F4 kf4    F5 kf5
+		F6 kf6    F7 kf7    F8 kf8    F9 kf9    F10 kf10
+		F11 kf11  F12 kf12  F13 kf13  F14 kf14  F15 kf15
+		F16 kf16  F17 kf17  F18 kf18  F19 kf19  F20 kf20
+		Backspace kbs  Insert kich1  Delete kdch1
+		Home khome  End kend  PageUp kpp  PageDown knp
+		Up kcuu1  Left kcub1  Down kcud1  Right kcuf1
+	)
+	for _k in ${(k)_keycap}; do
+		[[ -n "$terminfo[${_keycap[$_k]}]" ]] && key[$_k]=$terminfo[${_keycap[$_k]}]
+	done
+	unset _keycap _k
+fi
+
+# Default key bindings
+[[ -n ${key[Delete]} ]] && bindkey "${key[Delete]}" delete-char
+[[ -n ${key[Home]} ]] && bindkey "${key[Home]}" beginning-of-line
+[[ -n ${key[End]} ]] && bindkey "${key[End]}" end-of-line
+[[ -n ${key[Up]} ]] && bindkey "${key[Up]}" up-line-or-search
+[[ -n ${key[Down]} ]] && bindkey "${key[Down]}" down-line-or-search
+
+# Beyond what a Mac's /etc/zshrc does: terminfo describes Home/End/Delete in
+# their application-mode forms, and the browser terminal this runs in sends the
+# CSI forms instead. Without these, Home and End insert escape junk into the
+# line - and into the graded transcript.
+bindkey '^[[H' beginning-of-line; bindkey '^[[1~' beginning-of-line
+bindkey '^[[F' end-of-line;       bindkey '^[[4~' end-of-line
+bindkey '^[[3~' delete-char
+
 # Default prompt
 PS1="%n@%m %1~ %% "
 
 # Useful support for interacting with Terminal.app or other terminal programs
 [ -r "/etc/zshrc_$TERM_PROGRAM" ] && . "/etc/zshrc_$TERM_PROGRAM"
 
-autoload -Uz compinit && compinit -u -d "${ZDOTDIR:-$HOME}/.zcompdump" 2>/dev/null
+# A stock Mac account has no programmable completion at all: Apple's /etc/zshrc
+# never runs compinit, so `git <tab>` completes filenames until the user adds it
+# to ~/.zshrc. This tree runs it anyway, because a course that teaches
+# completion needs it to work. The dump goes outside $HOME - compinit writes one
+# even when it finds no completers, and a fresh Mac home has no .zcompdump for
+# `ls -a ~` to show.
+autoload -Uz compinit && compinit -u -d /private/var/db/.zcompdump 2>/dev/null
 
 # --- CodeSignal command tracking -------------------------------------------
 # PROMPT_SP marks partial lines with an inverse "%", which only adds noise to a

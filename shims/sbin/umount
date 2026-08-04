@@ -1,0 +1,10 @@
+#!/bin/bash
+# Inside the user namespace we hold CAP_SYS_ADMIN over every mount enter.sh
+# made, so the host's umount would really unmount /usr/lib or /proc and break
+# the session mid-task. Refuse the way a Mac refuses an unprivileged unmount.
+[ $# -eq 0 ] && {
+  printf 'usage: umount [-dfvnP] [-t fstypelist] special | node\n       umount -a[fvnP] [-h host] [-t fstypelist]\n' >&2
+  exit 1
+}
+printf 'umount: %s: Operation not permitted\n' "${!#}" >&2
+exit 1

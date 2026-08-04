@@ -53,7 +53,6 @@ logger
 login
 logname
 look
-lsof
 m4
 mail
 make
@@ -74,8 +73,6 @@ passwd
 paste
 patch
 perl
-pgrep
-pkill
 pr
 printenv
 printf
@@ -101,14 +98,12 @@ sudo
 tail
 tar
 tee
-telnet
 tic
 time
 top
 touch
 tput
 tr
-traceroute
 true
 tty
 unexpand

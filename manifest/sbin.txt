@@ -1,9 +1,5 @@
-dmesg
 fsck
-halt
 ifconfig
 ping
 ping6
-reboot
-shutdown
-umount
+route

@@ -1,6 +1,14 @@
 #!/bin/bash
-# BSD find: path is mandatory, no -printf
+# BSD find: path is mandatory, no -printf.
+#
+# Also prunes the Linux plumbing that has to live at fixed paths - /proc and
+# /lib64 (the ELF interpreter's path is compiled into every binary) and
+# /usr/libexec/.sys (the host's real /usr/bin) - so `find /` neither prints them
+# nor spends a minute walking the host's procfs. Same set the `ls` shim hides
+# from a listing of /.
 GNU=/usr/libexec/.sys/bin/find
+HIDE=(/proc /lib64 /usr/libexec/.sys)
+
 usage() { printf 'usage: find [-H | -L | -P] [-EXdsx] [-f path] path ... [expression]\n       find [-H | -L | -P] [-EXdsx] -f path [path ...] [expression]\n' >&2; exit 1; }
 if [ $# -eq 0 ]; then usage; fi
 case "$1" in
@@ -13,4 +21,69 @@ for a in "$@"; do
       printf 'find: %s: unknown primary or operator\n' "$a" >&2; exit 1 ;;
   esac
 done
-exec -a find "$GNU" "$@"
+
+# Split the command line into leading options, start paths and expression.
+opts=(); paths=(); rest=(); globs=()
+i=1
+while [ $i -le $# ]; do
+  a="${!i}"
+  case "$a" in
+    -f) i=$((i+1)); paths+=("${!i}") ;;
+    -[HLPEXdsx]*) opts+=("$a") ;;
+    *) break ;;
+  esac
+  i=$((i+1))
+done
+while [ $i -le $# ]; do
+  a="${!i}"
+  case "$a" in
+    -*|'('|'!') break ;;
+    *) paths+=("$a"); i=$((i+1)) ;;
+  esac
+done
+
+# GNU find warns when a global option follows a test, so those have to lead the
+# expression - ahead of the prune clause added below.
+expr=("${@:i}")
+j=0
+has_action=0
+while [ $j -lt ${#expr[@]} ]; do
+  a="${expr[j]}"
+  case "$a" in
+    -maxdepth|-mindepth)
+      globs+=("$a" "${expr[j+1]}"); j=$((j+2)); continue ;;
+    -depth|-follow|-daystart|-noleaf|-xdev|-mount|-warn|-nowarn|-H|-L|-P|-ignore_readdir_race|-noignore_readdir_race)
+      globs+=("$a"); j=$((j+1)); continue ;;
+    -print|-print0|-fprint|-fprint0|-fprintf|-ls|-fls|-exec|-execdir|-ok|-okdir|-delete|-quit)
+      has_action=1 ;;
+  esac
+  rest+=("$a"); j=$((j+1))
+done
+
+# Prune only what this traversal could actually reach, so an ordinary
+# `find . -name x` is handed to find untouched.
+prunes=()
+for h in "${HIDE[@]}"; do
+  for p in ${paths[@]+"${paths[@]}"}; do
+    [ -d "$p" ] || continue
+    rp="$(cd -- "$p" 2>/dev/null && pwd -P)" || continue
+    if [ "$rp" = "/" ] || [ "$h" = "$rp" ] || [ "${h#"$rp"/}" != "$h" ]; then
+      prunes+=(-path "$h" -o)
+      break
+    fi
+  done
+done
+
+final=("${opts[@]}" ${paths[@]+"${paths[@]}"} ${globs[@]+"${globs[@]}"})
+if [ ${#prunes[@]} -gt 0 ]; then
+  unset "prunes[$(( ${#prunes[@]} - 1 ))]"        # drop the trailing -o
+  final+=('(' "${prunes[@]}" ')' -prune -o)
+  [ ${#rest[@]} -gt 0 ] && final+=('(' "${rest[@]}" ')')
+  # -prune is true, so with no explicit action GNU's implied -print would report
+  # the pruned directories themselves.
+  [ $has_action -eq 0 ] && final+=(-print)
+else
+  final+=(${rest[@]+"${rest[@]}"})
+fi
+
+exec -a find "$GNU" "${final[@]}"

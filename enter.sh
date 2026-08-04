@@ -77,23 +77,44 @@ farm "$R/usr/sbin" /usr/sbin /usr/bin
 farm "$R/sbin"     /usr/sbin /usr/bin
 mount --bind /usr/bin/bash "$R/bin/sh" 2>/dev/null
 
+# --------------------------------------------------------------- self-test
+# MACOS_SELFTEST=selftest.sh runs that script inside the simulated Mac instead
+# of starting a login shell. The copy only exists during a test run, so the
+# learner's filesystem never carries it.
+if [ -n "${MACOS_SELFTEST:-}" ]; then
+  if [ ! -f "$MACOS_SELFTEST" ]; then
+    echo "MACOS_SELFTEST: no such file: $MACOS_SELFTEST" >&2; exit 1
+  fi
+  install -m 755 "$MACOS_SELFTEST" "$R/private/var/db/.selftest" || exit 1
+  set -- /bin/bash /private/var/db/.selftest
+fi
+
 # ------------------------------------------------------------------ login
+ENVV=(
+  HOME=/Users/Learner
+  USER=Learner
+  LOGNAME=Learner
+  SHELL=/bin/zsh
+  TERM="${TERM:-xterm-256color}"
+  TERM_PROGRAM=Apple_Terminal
+  TERM_PROGRAM_VERSION=455
+  TERM_SESSION_ID=w0t0p0
+  LANG=en_US.UTF-8
+  TZ=Europe/Berlin
+  __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0
+  XPC_SERVICE_NAME=0
+  XPC_FLAGS=0x0
+  COMMAND_MODE=unix2003
+)
+
+# Arguments (from the self-test above, or from a grader that wants to inspect
+# the built root) run in place of the interactive login.
+if [ $# -gt 0 ]; then
+  exec chroot "$R" /usr/bin/env -i "${ENVV[@]}" "$@"
+fi
+
 LOGIN_TS="$(LC_ALL=C date '+%a %b %e %T')"
 printf 'Last login: %s on ttys000\n' "$LOGIN_TS"
 
-exec chroot "$R" /usr/bin/env -i \
-  HOME=/Users/Learner \
-  USER=Learner \
-  LOGNAME=Learner \
-  SHELL=/bin/zsh \
-  TERM="${TERM:-xterm-256color}" \
-  TERM_PROGRAM=Apple_Terminal \
-  TERM_PROGRAM_VERSION=455 \
-  TERM_SESSION_ID=w0t0p0 \
-  LANG=en_US.UTF-8 \
-  TZ=Europe/Berlin \
-  __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0 \
-  XPC_SERVICE_NAME=0 \
-  XPC_FLAGS=0x0 \
-  COMMAND_MODE=unix2003 \
+exec chroot "$R" /usr/bin/env -i "${ENVV[@]}" \
   /bin/sh -c 'cd /Users/Learner && exec /bin/zsh -l'

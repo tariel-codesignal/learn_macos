@@ -1,0 +1,66 @@
+#!/bin/bash
+# macOS pgrep/pkill, over the same canned process table as `ps`.
+#
+# The host binaries are actively wrong here, not merely leaky: /proc inside the
+# chroot is the host's, so pgrep would print host pids that name nothing in this
+# pid namespace, and pkill would then signal whichever local pid happened to
+# collide with one. Matching the ps shim's table keeps the fiction consistent.
+#
+# TABLE: pid|name|full command
+TABLE='1|launchd|/sbin/launchd
+102|logd|/usr/libexec/logd
+112|opendirectoryd|/usr/libexec/opendirectoryd
+488|Finder|/System/Library/CoreServices/Finder.app/Contents/MacOS/Finder
+501|Dock|/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock'
+TABLE="$TABLE
+${PPID:-915}|zsh|-zsh"
+
+self="${0##*/}"
+full=0; list=0; exact=0; newest=0; pat=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -f) full=1 ;;
+    -l) list=1 ;;
+    -x) exact=1 ;;
+    -n|-o) newest=1 ;;
+    -q) list=0 ;;
+    -[acdgGijJlPStUu]) shift ;;                     # takes an argument
+    --) shift; break ;;
+    -*) printf 'usage: %s [-Lafilnoqvx] [-F pidfile] [-G gid] [-P ppid] [-U uid]\n' "$self" >&2
+        printf '       %*s [-d delim] [-g pgrp] [-t tty] [-u euid] pattern ...\n' ${#self} '' >&2
+        exit 2 ;;
+    *) pat="$1" ;;
+  esac
+  shift
+done
+[ -z "$pat" ] && { printf '%s: no pattern specified\nusage: %s ... pattern ...\n' "$self" "$self" >&2; exit 2; }
+
+hits=""
+while IFS='|' read -r pid name cmd; do
+  [ -z "$pid" ] && continue
+  hay="$name"; [ $full -eq 1 ] && hay="$cmd"
+  if [ $exact -eq 1 ]; then
+    [ "$hay" = "$pat" ] || continue
+  else
+    printf '%s' "$hay" | grep -Eq -- "$pat" 2>/dev/null || continue
+  fi
+  hits="${hits}${pid}|${name}
+"
+done <<EOF
+$TABLE
+EOF
+
+[ -z "$hits" ] && exit 1
+[ $newest -eq 1 ] && hits="$(printf '%s' "$hits" | tail -1)"
+
+# pkill signals; there is nothing real behind the table, so it just reports the
+# match the way a successful pkill does - silently, with status 0.
+[ "$self" = "pkill" ] && exit 0
+
+while IFS='|' read -r pid name; do
+  [ -z "$pid" ] && continue
+  if [ $list -eq 1 ]; then printf '%s %s\n' "$pid" "$name"; else printf '%s\n' "$pid"; fi
+done <<EOF
+$hits
+EOF
+exit 0

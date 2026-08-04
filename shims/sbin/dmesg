@@ -1,0 +1,8 @@
+#!/bin/bash
+# The host's dmesg would print the container host's Linux kernel ring buffer -
+# the single largest leak available to a curious learner. A Mac refuses it to
+# anyone who is not root, and `id` here claims to be uid 501, so refusing is
+# both safe and accurate. Text matches macOS 15 verbatim.
+printf 'Unable to obtain kernel buffer: Operation not permitted\n' >&2
+printf 'usage: sudo dmesg\n' >&2
+exit 1

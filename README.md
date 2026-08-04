@@ -34,21 +34,23 @@ The learner therefore gets a **real** filesystem root: `pwd` is `/Users/Learner`
 |---|---|
 | `build.sh` | Builds the root filesystem. Pure file creation, ~0.3s. |
 | `enter.sh` | Namespaces, bind mounts, chroot, login. |
+| `selftest.sh` | ~90 assertions run inside the built root. Run it after any change here, and after the host image changes. |
 | `manifest/*.txt` | Curated command names per directory — the reason `ls /usr/bin` reads like a Mac and has no `apt`, `dpkg` or `systemctl`. |
+| `manifest/zsh_functions.txt` | Every zsh function name a real Mac ships. Filters what `revendor.sh` vendors for completion. |
 | `shims/usr_bin/` | BSD-flavored and macOS-only commands. |
 | `shims/usr_sbin/`, `shims/sbin/`, `shims/bin/` | Same, for those directories. |
 | `shims/homebrew_bin/brew` | Homebrew simulator. |
-| `vendor/vendor.txz` | zsh, its modules and digests, `less` and `nano`, packed as one `tar.xz`. |
+| `vendor/vendor.txz` | zsh, its modules, function digests and completion functions, `less` and `nano`, packed as one `tar.xz`. |
 | `vendor/checksums.txt` | sha256 of `vendor.txz`. `build.sh` verifies before unpacking. |
-| `revendor.sh` | Rebuilds `vendor/vendor.txz` from upstream packages. Needs network; only for repair. |
+| `revendor.sh` | Rebuilds `vendor/vendor.txz` from upstream packages. Needs network; only for repair or to change what is vendored. |
 
 Nothing is installed at setup time: no `apt`. Total setup cost is about **0.5
 seconds**, most of it fetching and verifying the vendored payload.
 
 ### Why this tree lives here instead of directly in the task
 
-The simulator needs ~3.7 MB of real binaries — the zsh 5.8.1 executable, its 33
-modules, 10 function digests, `less` and `nano`. The host image ships none of
+The simulator needs several MB of real binaries — the zsh 5.8.1 executable, its
+33 modules, function digests, `less` and `nano`. The host image ships none of
 them, so without these there is no shell and nothing works. This whole `macos/`
 tree used to be committed straight into the CodeSignal task's own storage, but
 that storage is hostile to binaries:
@@ -79,9 +81,17 @@ bash macos/revendor.sh
 
 That refetches the pinned packages, restages the tree, repacks `vendor.txz`,
 regenerates the checksum and verifies the result unpacks to exactly what was
-staged — then commit and push the result to `learn_macos`. **zsh's modules and
-function digests are ABI-locked to the zsh binary** — they come from the same
-package pair and must always be replaced together, never mixed across versions.
+staged — then commit and push the result to `learn_macos`. It runs on Linux or
+macOS (it falls back to `ar` when `dpkg-deb` is absent), but packing needs GNU
+tar for a reproducible checksum — on macOS, `brew install gnu-tar`.
+
+**zsh's modules, function digests and completion functions are ABI-locked to the
+zsh binary.** They come from the same package pair and must always be replaced
+together, never mixed across versions. A digest from another release is refused
+outright — `zwc file has wrong version (zsh-5.8.1)` — and because `/etc/zshrc`
+loads them through `autoload -Uz … && …`, a mismatch fails *silently*: no
+`compinit`, no completion, no `zmv`. `selftest.sh` is what catches this; you can
+also inspect a digest directly with `zcompile -t some.zwc`.
 
 Three function digests are **deliberately excluded** — `Zftp.zwc`
 (`zfget`/`zfput`), `Calendar.zwc` (`calendar*`) and `TCP.zwc`
@@ -97,6 +107,11 @@ placeholder. Non-empty files are shims and are left alone. The result is that
 `which sed` says `/usr/bin/sed`, `ls -l /usr/bin` shows real binaries with real
 sizes owned by `root wheel`, and no Linux-only command names are visible.
 
+Both halves of that fail silently by design: `build.sh` skips a manifest name the
+host does not have, and `enter.sh` ignores a bind that does not take. A
+zero-length file left in `/bin`, `/usr/bin`, `/sbin` or `/usr/sbin` is therefore
+the signature of host-image drift, and `selftest.sh` reports every one it finds.
+
 ### Identity
 
 The session runs as uid 0 inside the namespace, because any other uid mapping
@@ -108,6 +123,84 @@ makes `unshare` setuid away from root and drop the capabilities needed to mount.
   unmapped in the namespace and therefore surface as the overflow uid)
 
 `id` is shimmed to report the 501/20 a real Mac account has.
+
+### zsh configuration
+
+`/etc/zshenv` and `/etc/zshrc` are written by `build.sh` and track Apple's
+versions of those files, with three deliberate differences.
+
+**`fpath` is generated, not hardcoded.** A `.zwc` digest is consulted only when
+`fpath` names the directory it was compiled from — the digest sits *beside* that
+directory, which need not exist. So `fpath=(/System/Library/zsh/functions)`
+reaches nothing at all: it looks for `functions.zwc`, and the directory itself
+holds only digests. `build.sh` walks the payload and emits one entry per digest,
+so a re-vendored set cannot silently lose a suite. Where a digest and loose
+function files share a directory, a digest miss falls back to the files — which
+is what lets `Completion/` be vendored either way.
+
+`Newuser` is left off that list on purpose: reaching `zsh-newuser-install` would
+let this zsh offer its first-run configuration wizard, which no Mac does.
+`enter.sh` blanks the newuser script for the same reason.
+
+**Darwin parameters are set.** This zsh was built for Linux on x86-64, so
+`$OSTYPE` would otherwise read `linux-gnu`. `/etc/zshenv` sets `OSTYPE`,
+`VENDOR`, `MACHTYPE` and `CPUTYPE` to what a 15.5 arm64 shell reports; besides
+fixing `echo $OSTYPE`, this makes zsh's own completion functions take their BSD
+branches. `ZSH_VERSION` is deliberately *not* faked — `compinit` and friends
+branch on it, and claiming 5.9 could select a code path this 5.8.1 binary cannot
+run.
+
+**`compinit` runs.** See below.
+
+## Tab completion
+
+Worth knowing before treating this as a gap: **a stock Mac has no programmable
+completion either.** Apple's `/etc/zshrc` never calls `compinit`, so on a fresh
+account with no `~/.zshrc`, `git che<tab>` completes filenames and nothing more.
+Verify on any Mac with:
+
+```bash
+env -i HOME=/tmp/empty TERM=xterm-256color /bin/zsh -l -i -c 'echo ${#_comps}'
+```
+
+This tree runs `compinit` anyway, because a course that teaches completion needs
+it to work. Two notes on how:
+
+- The dump goes to `/private/var/db/.zcompdump`, not `$HOME`. `compinit` writes a
+  dump even when it finds no completers, and a fresh Mac home has no
+  `.zcompdump` for `ls -a ~` to show.
+- The completion functions are vendored from Ubuntu's `zsh-common`, flattened
+  into one directory the way a Mac flattens them, and filtered through
+  `manifest/zsh_functions.txt` — the name list from a real Mac. That list
+  intentionally *includes* `_apt`, `_dpkg` and `_yum`: Apple ships upstream zsh's
+  whole Completion tree, Linux completers included, so a real Mac really does
+  complete `apt` once compinit is enabled. Filtering on Apple's list is what
+  keeps Ubuntu-only additions out without maintaining a blocklist by hand.
+
+If `vendor.txz` predates this and carries no completion functions, everything
+still works — `compinit` just finds nothing, exactly as before. Run
+`revendor.sh` to add them.
+
+`/etc/zshrc` also carries Apple's `terminfo`-driven key bindings (Home, End,
+Delete, and prefix-search on the arrow keys), plus the CSI forms of those keys,
+which Apple's file lacks and the browser terminal actually sends. Without them
+Home and End insert escape junk into the line — and into the graded transcript.
+
+## Self-test
+
+```bash
+bash build.sh && MACOS_SELFTEST=selftest.sh bash enter.sh
+```
+
+`enter.sh` copies the script into the root, runs it inside the chroot instead of
+starting a login shell, and removes it afterwards, so nothing is left in the
+learner's filesystem. It checks identity, filesystem shape, every deliberate
+BSD-vs-GNU divergence, leak containment, the canned process tools, Homebrew, the
+zsh parameters and key bindings, whether completion is live, and whether any
+command placeholder failed to bind. Exit status is non-zero if anything fails.
+
+Passing arguments to `enter.sh` also runs them in place of the login shell, which
+is useful for graders that want to inspect the built root without a pty.
 
 ## What is simulated
 
@@ -126,8 +219,16 @@ macOS shell work:
 `pbpaste`, `say`, `defaults`, `xattr`, `plutil`, `osascript`, `caffeinate`,
 `mdfind`, `screencapture`, `xcode-select`, `csrutil`, `spctl`, `pmset`,
 `vm_stat`, `arch`, `diskutil`, `system_profiler`, `softwareupdate`,
-`networksetup`, `systemsetup`, `sysctl`, `nvram`, `launchctl`, `df`, `mount`,
-`ps`, `top`, `file`, `id`, `man`, `sudo`.
+`networksetup`, `systemsetup`, `sysctl`, `nvram`, `df`, `mount`, `file`, `id`,
+`man`, `sudo`.
+
+**Commands shimmed because the host's version would be wrong or dangerous** —
+`ps`, `top`, `pgrep`, `pkill` (canned; see the limitation below), `dmesg`
+(refuses, as a Mac does to non-root, instead of dumping the host kernel's ring
+buffer), `umount` (refuses; inside the namespace it would really unmount the
+binds that make this work and break the session mid-task), and
+`shutdown`/`halt`/`reboot` (refuse with `NOT super-user`; the host's are
+systemctl wrappers that would print systemd diagnostics into a Mac session).
 
 **Homebrew** — `brew install/uninstall/list/info/search/update/upgrade/doctor/
 config/--prefix`, with an installed-formula database under
@@ -152,30 +253,49 @@ really works.
 - **No man pages.** The image ships none, so `man` reports
   `No manual entry for X` rather than leaking Ubuntu's "system has been
   minimized" notice.
-- **`/proc` is the host's**, because a container's user namespace cannot mount a
-  fresh procfs. That is why `ps` and `top` are shimmed — a real `ps` would list
-  the container's Linux processes.
-- **Seams that remain**: `ls -a /` hides `lib`, `lib64` and `proc` via the `ls`
-  shim, but `echo /*` or `find /` still reveals them. Shims are readable shell
-  scripts. `uname -m` reports arm64 while the binaries underneath are x86-64.
+- **The process tools are a closed fiction.** `/proc` inside the chroot is the
+  host's, because a container's user namespace cannot mount a fresh procfs over
+  the one it inherited. So `ps`, `top`, `pgrep` and `pkill` all report the same
+  hardcoded table instead of anything real: a learner's own `sleep 300 &` does
+  not appear in `ps`, and `pkill sleep` reports no match. **Avoid tasks that
+  teach process management.** Worth re-testing in the container: `enter.sh`
+  already unshares a PID namespace, and `mount -t proc proc "$R/proc"` may
+  succeed at a *fresh* mountpoint even though remounting over the inherited
+  `/proc` does not. If it does, these four shims can become formatters over real
+  data and this limitation goes away.
+- **`/usr/lib` and `/usr/share` are the host's**, bind-mounted whole because the
+  binaries need them. `ls /usr/share` and `ls /usr/lib` therefore show an Ubuntu
+  tree (`x86_64-linux-gnu`, `dpkg`, `doc`). Narrowing this to per-subdirectory
+  binds (terminfo, locale, zoneinfo, …) is possible but needs testing against
+  every shimmed tool.
+- **Seams that remain**: `ls -a /` hides `lib`, `lib64` and `proc`, and `find`
+  prunes those plus `/usr/libexec/.sys`, but `echo /*` and `grep -r /` still
+  reveal them. Shims are readable shell scripts. `uname -m` reports arm64 while
+  the binaries underneath are x86-64.
+- **Only `id` reports the Mac's uid.** The session really is uid 0, so
+  `stat -f %u`, `ls -ln`, `find -user` and Python's `os.getuid()` all say 0 while
+  `id -u` says 501. Avoid tasks that compare them.
+- **`$PS1` reads `%%` where Apple's reads `%#`.** `%#` renders as `#` for a
+  privileged shell, and this one is uid 0, so the literal `%%` is what keeps the
+  prompt showing `%`. The rendered prompt is right; `echo $PS1` is not.
 - **Error *wording* is still GNU's.** The shims `exec -a <name>` so the prefix is
   right — `sed: can't read …`, not `/usr/libexec/.sys/bin/sed: …` — but the
   phrasing underneath is GNU's: `ls: cannot access 'x'` where macOS says
   `ls: x: No such file or directory`, `stat: cannot statx`, and `find` quotes
   with `‘ ’`. Only the deliberately-reproduced errors (BSD `-i`, rejected long
   options, the usage blocks) are exact.
+- **A few refusals are inferred, not verified.** `shutdown: NOT super-user` is
+  verbatim from macOS 15; `halt` and `reboot` are assumed to share BSD's
+  super-user check, and `umount`'s wording follows the `mount` shim's style.
+  Under `sudo` they still refuse, where a real Mac would proceed.
+- **`launchctl` and `log` are absent**, not simulated. Nothing here can model
+  launchd, and the host has no equivalent worth exposing. `disable log` in
+  `/etc/zshrc` is Apple's line, kept for fidelity, and harmless.
 - **Version strings of real binaries leak Linux.** `$ZSH_VERSION` is 5.8.1 where
   macOS 15.5 ships 5.9; `less --version` says `590 (GNU regular expressions)`
   against Apple's `643 (POSIX …)`; `nano --version` says `GNU nano 6.2`; and a
   `brew install`ed host binary reports its own build, e.g. `wget … built on
   linux-gnu`. Avoid tasks that assert on version output.
-- **Tab completion is minimal.** `/etc/zshenv` puts
-  `/System/Library/zsh/functions/Completion` on `fpath`, but that directory is
-  not vendored — its digests are ~10 MB, dominated by a 5.2 MB `Unix.zwc`. So
-  `compinit` finds no `_*` functions and completion falls back to filenames: no
-  `git <tab>`, no flag completion. To enable it, add
-  `Completion/{Base,Unix,Zsh,Darwin,X}.zwc` in `revendor.sh` — and deliberately
-  *not* `Debian.zwc`, `Linux.zwc` or `Redhat.zwc`, which no Mac has.
 - **Long commands wrap in the transcript.** At 80 columns zsh's line editor
   repositions with bare `\r`, and `run_solution.sh`'s escape-stripping cannot
   model cursor motion, so a command longer than the terminal width can surface
@@ -183,6 +303,27 @@ really works.
   verbatim command list from the `preexec` log — that source is exact.
 - **`/opt` contains `python`** alongside `homebrew`, because the host's Python
   has its prefix compiled in and must stay at its original path.
+
+## Notes for the task side
+
+`setup_steps.sh` is the single point of failure for every live task using this:
+it fetches `refs/heads/main`, so a bad push here breaks all of them at once, and
+a transient GitHub failure fails setup with no retry. Two things worth doing on
+that side:
+
+- **Pin it.** Fetch a tag or commit SHA rather than `main`, and move the tag when
+  a change has been tested.
+- **Do not swallow the diagnosis.** `setup.sh` sends `setup_steps.sh` output to
+  `/dev/null`, which also discards `build.sh`'s error messages. On failure, print
+  `/tmp/.macos_build_error` if it exists — it names the cause precisely.
+
+```sh
+if ! curl -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 120 \
+        "$MACOS_REPO_TARBALL" | tar -xz -C "$MACOS_DIR" --strip-components=1; then
+  echo "Could not fetch the macOS simulator sources from GitHub." >&2
+  exit 1
+fi
+```
 
 ## Changing the persona
 
@@ -197,4 +338,7 @@ Changing `USER_NAME` or `HOST_NAME` also means updating the `PROMPT` variable in
 2. To wrap a real GNU tool, call it at `/usr/libexec/.sys/bin/<name>` — that is
    the host's `/usr/bin`, bind-mounted where the learner will not find it.
 3. To expose an existing host binary unchanged, add its name to the relevant
-   `manifest/*.txt`.
+   `manifest/*.txt` — and check the directory against a real Mac first, since
+   macOS and Ubuntu disagree about several (`lsof`, `traceroute` and `route` all
+   live elsewhere on macOS, and `telnet` has not shipped since 10.13).
+4. Add an assertion to `selftest.sh`.
