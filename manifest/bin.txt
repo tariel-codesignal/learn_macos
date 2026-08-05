@@ -13,7 +13,6 @@ hostname
 kill
 ln
 ls
-mkdir
 mv
 ps
 pwd

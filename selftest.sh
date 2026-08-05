@@ -109,6 +109,17 @@ errs  "grep rejects -P"             "illegal option" grep -P a /etc/passwd
 errs  "readlink rejects -f"         "illegal option" readlink -f /etc
 errs  "find rejects -printf"        "unknown primary" find / -printf '%p'
 errs  "man has no pages"            "No manual entry" man ls
+# mkdir -v is normal output, not an error, so a task that teaches it reads the
+# wording directly: BSD prints the bare path, GNU announces "created directory".
+rm -rf "$T/mk"
+is    "mkdir -pv prints bare paths" "$T/mk
+$T/mk/a
+$T/mk/a/b" mkdir -pv "$T/mk/a/b"
+errs  "mkdir names an existing dir" "mkdir: $T/mk: File exists" mkdir "$T/mk"
+errs  "mkdir names the missing parent" "mkdir: $T/mk/nope: No such file or directory" \
+      mkdir "$T/mk/nope/child"
+errs  "mkdir rejects GNU long options" "illegal option" mkdir --parents "$T/mk/c"
+succeeds "mktemp works (TMPDIR exists)" bash -c 'f=$(mktemp) && rm -f "$f"'
 
 group "leak containment"
 lacks "find / does not walk into /proc"  "/proc"  find / -maxdepth 1

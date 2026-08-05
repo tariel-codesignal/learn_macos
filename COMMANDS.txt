@@ -24,7 +24,7 @@
  /bin
 --------------------------------------------------------------------------------
 bash  cat  chmod  cp  dash  date*  dd  df*  echo  ed  expr  hostname  kill
-ln  ls*  mkdir  mv  ps!  pwd  realpath  rm  rmdir  sh+  sleep  stty  sync
+ln  ls*  mkdir*  mv  ps!  pwd  realpath  rm  rmdir  sh+  sleep  stty  sync
 test  unlink  zsh+
 
 --------------------------------------------------------------------------------
@@ -82,6 +82,8 @@ brew*
    readlink      -f, -e, -m are rejected.
    find          -printf, -regextype, -executable, -readable, -writable are
                  rejected. Prunes /proc, /lib64 and /usr/libexec/.sys.
+   mkdir         -v prints the bare path, not GNU's "created directory"; and
+                 errors read "mkdir: x: File exists", naming the missing parent.
    md5           BSD md5, not md5sum.
    man           Reports "No manual entry for X" - the image ships no pages.
 

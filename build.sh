@@ -75,6 +75,10 @@ mkdir -p "$R"
 mkdir -p "$R"/{Applications,Library,System,Users,Volumes,cores,opt,private,usr,bin,sbin,lib64,proc,dev}
 mkdir -p "$R"/private/{etc,var,tmp}
 mkdir -p "$R"/private/var/{db,folders,log,root,run,tmp,empty}
+# /etc/zshenv points TMPDIR here, the way a Mac does. It has to exist, or every
+# `mktemp` - the learner's and any shim's - fails with nowhere to write.
+mkdir -p "$R"/private/var/folders/qz/8k3n7x2d1r7g9v4mbqp0lqrc0000gn/T
+chmod 700 "$R"/private/var/folders/qz/8k3n7x2d1r7g9v4mbqp0lqrc0000gn/T
 mkdir -p "$R"/private/etc/{paths.d,ssl}
 mkdir -p "$R"/usr/{bin,sbin,share,lib,libexec,local}
 mkdir -p "$R"/usr/local/{bin,lib,share,opt}

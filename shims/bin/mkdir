@@ -1,0 +1,71 @@
+#!/bin/bash
+# BSD mkdir. Three things differ from GNU, and a course that teaches `mkdir -pv`
+# reads every one of them:
+#   -v      BSD prints the bare path; GNU prints "mkdir: created directory 'x'"
+#   errors  BSD says "mkdir: x: File exists"; GNU says "cannot create directory"
+#   ENOENT  BSD names the missing parent ("mkdir: a: No such file...") where GNU
+#           names the path it was asked for ('a/b')
+# GNU long options are rejected, and the exit status for a usage error is BSD's
+# 64 rather than GNU's 1.
+GNU=/usr/libexec/.sys/bin/mkdir
+
+usage() { printf 'usage: mkdir [-pv] [-m mode] directory_name ...\n' >&2; exit 64; }
+illegal() { printf 'mkdir: illegal option -- %s\n' "$1" >&2; usage; }
+
+opts=(); dirs=(); endopts=0
+while [ $# -gt 0 ]; do
+  if [ $endopts -eq 1 ]; then dirs+=("$1"); shift; continue; fi
+  case "$1" in
+    --)   endopts=1; shift ;;
+    --*)  illegal - ;;
+    -m)   opts+=(-m "${2:-}"); shift 2 ;;
+    -m?*) opts+=(-m "${1#-m}"); shift ;;
+    -?*)
+      rest="${1#-}"; keep=""; extra=0
+      while [ -n "$rest" ]; do
+        c="${rest:0:1}"; rest="${rest:1}"
+        case "$c" in
+          p|v) keep="$keep$c" ;;
+          # -m ends the cluster: the mode is the rest of it, or the next word
+          m)   if [ -n "$rest" ]; then opts+=(-m "$rest"); rest=""
+               else opts+=(-m "${2:-}"); extra=1; fi ;;
+          *)   illegal "$c" ;;
+        esac
+      done
+      [ -n "$keep" ] && opts+=("-$keep")
+      shift
+      [ $extra -eq 1 ] && shift
+      ;;
+    *) dirs+=("$1"); shift ;;
+  esac
+done
+[ ${#dirs[@]} -eq 0 ] && usage
+
+# LC_ALL=C so coreutils quotes with ASCII ' rather than the locale's ‘ ’, which
+# is what makes the rewriting below predictable.
+E="/tmp/.mkdir.$$"
+trap 'rm -f "$E"' EXIT
+LC_ALL=C "$GNU" ${opts[@]+"${opts[@]}"} -- "${dirs[@]}" 2>"$E" \
+  | sed -E "s/^mkdir: created directory '(.*)'\$/\1/"
+rc=${PIPESTATUS[0]}
+
+if [ -s "$E" ]; then
+  while IFS= read -r line; do
+    case "$line" in
+      "mkdir: cannot create directory "*)
+        rest="${line#mkdir: cannot create directory }"
+        msg="${rest##*: }"
+        p="${rest%": $msg"}"
+        p="${p#\'}"; p="${p%\'}"
+        # BSD reports the component that is actually missing
+        if [ "$msg" = "No such file or directory" ]; then
+          d="$(dirname "$p")"
+          [ -d "$d" ] || p="$d"
+        fi
+        printf 'mkdir: %s: %s\n' "$p" "$msg" >&2 ;;
+      *) printf '%s\n' "$line" >&2 ;;
+    esac
+  done < "$E"
+fi
+
+exit "$rc"
