@@ -143,11 +143,28 @@ lacks "mount output is APFS"         "ext4"       mount
 group "homebrew"
 is "brew --prefix"  "/opt/homebrew"  brew --prefix
 succeeds "brew list runs"            brew list
+brew install tree >/dev/null 2>&1
+# brew list <formula> names the files that formula put on disk (Unit 2), not the
+# installed roster - a distinct code path from bare `brew list`.
+is    "brew list <formula> shows its files" "/opt/homebrew/Cellar/tree/2.2.1/bin/tree" \
+      bash -c 'brew list tree | grep -m1 "bin/tree$"'
+lacks "brew list <formula> is not the roster" "wget" bash -c 'brew install wget >/dev/null 2>&1; brew list tree'
+errs  "brew list names an uninstalled keg"    "No such keg: /opt/homebrew/Cellar/htop" brew list htop
+errs  "brew list rejects an unknown formula"  "No available formula" brew list zzznotathing
+# brew shellenv is what ~/.zprofile evaluates at login; it must run silently and
+# export the prefix. (Guarded so it never adds /opt/homebrew to PATH a 2nd time.)
+is    "brew shellenv sets HOMEBREW_PREFIX" 'export HOMEBREW_PREFIX="/opt/homebrew";' \
+      bash -c 'brew shellenv | head -1'
 if [ -x /usr/libexec/.sys/bin/wget ]; then
   brew install wget >/dev/null 2>&1
   succeeds "brew install wget produced a binary" command -v wget
+  succeeds "wget --version runs"                 bash -c 'wget --version >/dev/null'
+  # Unit 6: a copy of the real binary under a new name is itself runnable.
+  succeeds "a copy of wget runs under a new name" \
+    bash -c 'cp "$(command -v wget)" "$T/fetcher" && "$T/fetcher" --version >/dev/null'
 else
-  skip "brew install wget" "host has no wget"
+  skip "brew install wget / wget --version / fetcher copy" \
+       "host image has no wget - the course needs it; provision it in .codesignal/setup_steps.sh"
 fi
 
 group "zsh (from /etc/zshenv)"

@@ -132,7 +132,13 @@ brew*
  Homebrew
 --------------------------------------------------------------------------------
  Subcommands: install uninstall list info search update upgrade doctor config
- --prefix --cellar --version
+ shellenv --prefix --cellar --version
+
+ `brew list` with no argument prints installed formula names; `brew list X`
+ prints the files formula X put on disk (Cellar paths), errors "No such keg"
+ for an installed-catalog miss and "No available formula" for an unknown name.
+ `brew shellenv` prints the env a Mac's ~/.zprofile loads; the PATH line is
+ guarded so loading it never lists /opt/homebrew twice.
 
  The formula catalog (`brew search`, `brew info`):
    bat cmake coreutils curl fd ffmpeg fzf gh git gnu-sed go htop jq make

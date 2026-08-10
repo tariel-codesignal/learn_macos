@@ -110,6 +110,12 @@ mkdir -p "$H"/Public/Drop\ Box
 printf '0x08000100:0x0' > "$H/.CFUserTextEncoding"
 mkdir -p "$R/Users/Shared"
 
+# A Mac that has run the Homebrew installer carries this line in its login file -
+# the installer appends it so /opt/homebrew lands on PATH for login shells. PATH
+# is also set in /etc/zshenv here so non-login and grader shells still find brew;
+# the shim's `shellenv` guards its PATH line so this eval does not duplicate it.
+printf '\neval "$(/opt/homebrew/bin/brew shellenv)"\n' > "$H/.zprofile"
+
 # ----------------------------------------------------------------- /private/etc
 E="$R/private/etc"
 

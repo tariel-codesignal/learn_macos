@@ -54,6 +54,41 @@ hostname_for() {
     *) printf '%s' "$1" ;;
   esac
 }
+# The files a formula put on disk, as `brew list <formula>` prints them: real
+# keg paths, one per line, in the Cellar. The kegs here are stubs, so the set is
+# synthesized. tree and wget (the formulae the course installs) get their real
+# Sequoia file lists; anything else gets the standard keg shape.
+keg_files() { # keg_files <name> <version>
+  local n="$1" v="$2" b; b=$(hostname_for "$n")
+  case "$n" in
+    tree)
+      printf '%s\n' \
+        "$CELLAR/$n/$v/INSTALL_RECEIPT.json" \
+        "$CELLAR/$n/$v/LICENSE" \
+        "$CELLAR/$n/$v/bin/tree" \
+        "$CELLAR/$n/$v/.brew/tree.rb" \
+        "$CELLAR/$n/$v/CHANGES" \
+        "$CELLAR/$n/$v/sbom.spdx.json" \
+        "$CELLAR/$n/$v/README" \
+        "$CELLAR/$n/$v/TODO" \
+        "$CELLAR/$n/$v/share/man/man1/tree.1" ;;
+    wget)
+      printf '%s\n' \
+        "$CELLAR/$n/$v/INSTALL_RECEIPT.json" \
+        "$CELLAR/$n/$v/bin/wget" \
+        "$CELLAR/$n/$v/.brew/wget.rb" \
+        "$CELLAR/$n/$v/etc/wgetrc" \
+        "$CELLAR/$n/$v/share/man/man1/wget.1" \
+        "$CELLAR/$n/$v/share/info/wget.info" ;;
+    *)
+      printf '%s\n' \
+        "$CELLAR/$n/$v/INSTALL_RECEIPT.json" \
+        "$CELLAR/$n/$v/bin/$b" \
+        "$CELLAR/$n/$v/.brew/$n.rb" \
+        "$CELLAR/$n/$v/sbom.spdx.json" \
+        "$CELLAR/$n/$v/share/man/man1/$b.1" ;;
+  esac
+}
 
 cmd="${1:-}"; shift 2>/dev/null || true
 
@@ -71,7 +106,26 @@ case "$cmd" in
   --repository|--repo) printf '%s\n' "$PREFIX" ;;
 
   list|ls)
-    if [ -s "$DB" ]; then sort "$DB" | column -c 80 2>/dev/null || sort "$DB"; fi ;;
+    # Bare `brew list` prints the installed formula names, in columns. Given a
+    # formula, it instead prints the files that formula installed - the point
+    # Unit 2 makes ("a name is a label; that list is the evidence").
+    names=()
+    for a in "$@"; do case "$a" in -*) ;; *) names+=("$a") ;; esac; done
+    if [ ${#names[@]} -eq 0 ]; then
+      if [ -s "$DB" ]; then sort "$DB" | column -c 80 2>/dev/null || sort "$DB"; fi
+    else
+      rc=0
+      for n in "${names[@]}"; do
+        if installed "$n"; then
+          keg_files "$n" "$(lookup "$n" | cut -d'|' -f2)"
+        elif [ -n "$(lookup "$n")" ]; then
+          printf 'Error: No such keg: %s/%s\n' "$CELLAR" "$n" >&2; rc=1
+        else
+          printf 'Error: No available formula with the name "%s".\n' "$n" >&2; rc=1
+        fi
+      done
+      exit $rc
+    fi ;;
 
   info|abv)
     line=$(lookup "$1")
@@ -140,6 +194,19 @@ case "$cmd" in
 
   config)
     printf 'HOMEBREW_VERSION: %s\nHOMEBREW_PREFIX: %s\nHOMEBREW_CELLAR: %s\nmacOS: 15.5-arm64\nCLT: 16.4.0.0.1.1747106510\nXcode: N/A\n' "$VERSION" "$PREFIX" "$CELLAR" ;;
+
+  shellenv)
+    # The env a Mac's ~/.zprofile loads via `eval "$(brew shellenv)"`. Matches
+    # the Homebrew 4.x zsh form. The PATH line is guarded so that, in this
+    # environment - where /etc/zshenv already puts the prefix first for every
+    # shell (login or not) - loading it at login does not list the prefix twice.
+    printf 'export HOMEBREW_PREFIX="%s";\n' "$PREFIX"
+    printf 'export HOMEBREW_CELLAR="%s";\n' "$CELLAR"
+    printf 'export HOMEBREW_REPOSITORY="%s";\n' "$PREFIX"
+    printf 'fpath[1,0]="%s/share/zsh/site-functions";\n' "$PREFIX"
+    printf 'case ":${PATH}:" in *:%s/bin:*) ;; *) export PATH="%s/bin:%s/sbin:${PATH}" ;; esac\n' "$PREFIX" "$PREFIX" "$PREFIX"
+    printf '[ -z "${MANPATH-}" ] || export MANPATH=":${MANPATH#:}";\n'
+    printf 'export INFOPATH="%s/share/info:${INFOPATH:-}";\n' "$PREFIX" ;;
 
   help|"")
     printf 'Example usage:\n  brew search TEXT|/REGEX/\n  brew info [FORMULA|CASK...]\n  brew install FORMULA|CASK...\n  brew update\n  brew upgrade [FORMULA|CASK...]\n  brew uninstall FORMULA|CASK...\n  brew list [FORMULA|CASK...]\n' ;;
