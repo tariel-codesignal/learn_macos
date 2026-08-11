@@ -41,6 +41,25 @@ rb /dev              "$R/dev"
 # host process list, which is why ps/top are shimmed.
 rb /proc             "$R/proc"
 
+# ------------------------------------------------------------ workspace bind
+# The task's editable files, live inside the Mac: the learner edits a script in
+# the IDE and runs it at the prompt, and edits made at the prompt flow back to
+# the same files the grader diffs against the starter. Bind the subdirectory
+# rather than /usercode/FILESYSTEM itself, so .codesignal/ - and the seed it
+# holds - stays invisible to `ls -a`. A directory bind, not a file bind: an
+# editor that saves by writing a temp file and renaming over the target would
+# strand a file bind on the old inode.
+#
+# A task whose START points inside this directory must also create it in its
+# MANIFEST (`dir Projects/lab`), because seed.sh validates START at setup time,
+# before this mount exists.
+WS="${MACOS_WORKSPACE:-/usercode/FILESYSTEM/workspace}"
+WS_AT="${MACOS_WORKSPACE_AT:-Users/Learner/Projects/lab}"
+if [ -d "$WS" ]; then
+  mkdir -p "$R/$WS_AT"
+  b "$WS" "$R/$WS_AT"
+fi
+
 # Apple's zsh has no new-user setup script; this one's does, and it fires
 # because a fresh Mac home has no ~/.zshrc. Blank it out.
 : > "$R/private/var/db/.empty"
