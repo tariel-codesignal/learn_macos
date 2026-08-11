@@ -53,9 +53,13 @@ rb /proc             "$R/proc"
 # A task whose START points inside this directory must also create it in its
 # MANIFEST (`dir Projects/lab`), because seed.sh validates START at setup time,
 # before this mount exists.
+#
+# Only mount when the workspace actually holds files. An empty bind would
+# shadow whatever the seed put at the same path, so a task that seeds into this
+# directory and ships no editable files keeps its seeded content.
 WS="${MACOS_WORKSPACE:-/usercode/FILESYSTEM/workspace}"
 WS_AT="${MACOS_WORKSPACE_AT:-Users/Learner/Projects/lab}"
-if [ -d "$WS" ]; then
+if [ -d "$WS" ] && [ -n "$(ls -A "$WS" 2>/dev/null)" ]; then
   mkdir -p "$R/$WS_AT"
   b "$WS" "$R/$WS_AT"
 fi
