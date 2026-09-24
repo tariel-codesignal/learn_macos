@@ -1,0 +1,178 @@
+#!/bin/bash
+# BSD cp, after Apple's file_cmds. Copying is left to GNU cp; what this changes
+# is everything a learner reads:
+#   no -R     BSD says "cp: site is a directory (not copied)."; GNU says
+#             "-r not specified; omitting directory 'site'"
+#   errors    BSD says "cp: x: No such file or directory"; GNU says
+#             "cannot stat 'x'", and quotes every path
+#   -v        BSD prints "a -> b"; GNU prints "'a' -> 'b'"
+#   -i / -n   BSD asks "overwrite b? (y/n [n]) " and reports "not overwritten";
+#             a skipped file makes the exit status 1
+#   src/      with -R, a trailing slash on a source directory copies its
+#             contents rather than the directory itself
+# GNU long options are rejected, and a usage error exits 64 as on a Mac.
+GNU=/usr/libexec/.sys/bin/cp
+
+usage() {
+  printf '%s\n%s\n' \
+    'usage: cp [-R [-H | -L | -P]] [-fi | -n] [-aclpSsvXx] source_file target_file' \
+    '       cp [-R [-H | -L | -P]] [-fi | -n] [-aclpSsvXx] source_file ... target_directory' >&2
+  exit 64
+}
+illegal() { printf 'cp: illegal option -- %s\n' "$1" >&2; usage; }
+die() { printf 'cp: %s\n' "$1" >&2; exit 1; }
+
+R=0 r=0 L=0 H=0 P=0 f=0 i=0 n=0 p=0 l=0 s=0 v=0 x=0 c=0 X=0
+args=(); endopts=0
+for a in "$@"; do
+  if [ $endopts -eq 1 ] || [ "${a:0:1}" != - ] || [ "$a" = - ]; then
+    endopts=1; args+=("$a"); continue
+  fi
+  [ "$a" = -- ] && { endopts=1; continue; }
+  rest="${a#-}"
+  while [ -n "$rest" ]; do
+    ch="${rest:0:1}"; rest="${rest:1}"
+    case "$ch" in
+      R) R=1 ;;
+      r) r=1; L=1; H=0; P=0 ;;
+      H) H=1; L=0; P=0 ;;
+      L) L=1; H=0; P=0 ;;
+      P) P=1; H=0; L=0 ;;
+      a) p=1; R=1; P=1; H=0; L=0 ;;
+      # COMMAND_MODE=unix2003: -f and -i each cancel -n but not each other
+      f) f=1; n=0 ;;
+      i) i=1; n=0 ;;
+      n) n=1; f=0; i=0 ;;
+      p) p=1 ;; l) l=1 ;; s) s=1 ;; v) v=1 ;; x) x=1 ;;
+      c) c=1 ;; X) X=1 ;;
+      N|S) ;;                 # file flags / sparse files: nothing to mirror here
+      *) illegal "$ch" ;;
+    esac
+  done
+done
+[ ${#args[@]} -lt 2 ] && usage
+[ $c -eq 1 ] && [ $X -eq 1 ] && die 'the -c and -X options may not be specified together'
+[ $R -eq 1 ] && [ $r -eq 1 ] && die 'the -R and -r options may not be specified together'
+[ $l -eq 1 ] && [ $s -eq 1 ] && die 'the -l and -s options may not be specified together'
+[ $r -eq 1 ] && R=1
+
+# Options GNU does the actual copying with. -v, -i and -n are handled here for
+# files; they only reach GNU for directory trees.
+gopts=()
+[ $R -eq 1 ] && gopts+=(-R)
+if [ $R -eq 1 ]; then
+  [ $H -eq 1 ] && gopts+=(-H); [ $L -eq 1 ] && gopts+=(-L); [ $P -eq 1 ] && gopts+=(-P)
+elif [ $P -eq 1 ]; then gopts+=(-P)
+else gopts+=(-L)
+fi
+[ $p -eq 1 ] && gopts+=(-p)
+[ $l -eq 1 ] && gopts+=(-l)
+[ $s -eq 1 ] && gopts+=(-s)
+[ $x -eq 1 ] && gopts+=(-x)
+[ $f -eq 1 ] && gopts+=(-f)
+
+n_src=$(( ${#args[@]} - 1 ))
+srcs=("${args[@]:0:$n_src}")
+target="${args[$n_src]}"
+[ -z "$target" ] && target=.
+slash=0
+case "$target" in
+  /) ;;
+  */) slash=1; while [ "$target" != / ] && [ "${target%/}" != "$target" ]; do target="${target%/}"; done ;;
+esac
+
+if [ -d "$target" ]; then
+  todir=1
+else
+  todir=0
+  [ $n_src -gt 1 ] && die "$target: Not a directory"
+  if [ $slash -eq 1 ] && ! { [ $R -eq 1 ] && [ -d "${srcs[0]}" ] && [ ! -e "$target" ]; }; then
+    if [ -e "$target" ]; then die "$target: Not a directory"; else die "$target: No such file or directory"; fi
+  fi
+fi
+
+# GNU's wording -> BSD's. LC_ALL=C keeps GNU's quotes ASCII so this can find them.
+bsd_errors() {
+  sed -E \
+    -e "s/^cp: (-r not specified; )?omitting directory '(.*)'\$/cp: \2 is a directory (not copied)./" \
+    -e "s/^cp: '(.*)' and '(.*)' are the same file\$/cp: \2 and \1 are identical (not copied)./" \
+    -e "s/^cp: cannot overwrite non-directory '([^']*)' with directory .*/cp: \1: Not a directory/" \
+    -e "s/^cp: target '(.*)': (.*)\$/cp: \1: \2/" \
+    -e "s/^cp: cannot [a-z ]*'([^']*)'[^:]*: (.*)\$/cp: \1: \2/" \
+    -e "s/^cp: (preserving|setting) [a-z ]* for '([^']*)': (.*)\$/cp: \2: \3/" >&2
+}
+bsd_verbose() { sed -E "s/^'(.*)' -> '(.*)'\$/\1 -> \2/"; }
+
+ask() { # ask <dest>: BSD's -i prompt; succeeds on yes
+  local ans
+  printf 'overwrite %s? (y/n [n]) ' "$1" >&2
+  IFS= read -r ans
+  case "$ans" in [yY]*) return 0 ;; esac
+  printf 'not overwritten\n' >&2
+  return 1
+}
+
+E="/tmp/.cp.$$"
+trap 'rm -f "$E"' EXIT
+rc=0
+for src in "${srcs[@]}"; do
+  base="${src%/}"; base="${base##*/}"
+  if [ $todir -eq 1 ]; then
+    if [ "$target" = / ]; then dest="/$base"; else dest="$target/$base"; fi
+  else
+    dest="$target"
+  fi
+
+  if [ ! -e "$src" ] && [ ! -L "$src" ]; then
+    # the component that is not a directory, when there is one, reads as ENOTDIR
+    if [ "${src%/*}" != "$src" ] && [ -e "${src%/*}" ] && [ ! -d "${src%/*}" ]; then
+      printf 'cp: %s: Not a directory\n' "$src" >&2
+    else
+      printf 'cp: %s: No such file or directory\n' "$src" >&2
+    fi
+    rc=1; continue
+  fi
+
+  if [ -d "$src" ] && ! { [ -L "$src" ] && [ $P -eq 1 ]; }; then
+    if [ $R -eq 0 ]; then
+      printf 'cp: %s is a directory (not copied).\n' "$src" >&2
+      rc=1; continue
+    fi
+    from="$src"
+    # "cp -R dir/ existing" copies what is inside dir
+    [ "${src%/}" != "$src" ] && [ $todir -eq 1 ] && { from="$src."; dest="$target"; }
+    extra=()
+    [ $v -eq 1 ] && extra+=(-v)
+    if [ $i -eq 1 ]; then
+      # prompts need a live stderr, so they keep GNU's wording inside a tree
+      LC_ALL=C "$GNU" "${gopts[@]}" -i ${extra[@]+"${extra[@]}"} -- "$from" "$dest" | bsd_verbose
+      [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+    else
+      [ $n -eq 1 ] && extra+=(-n)
+      LC_ALL=C "$GNU" "${gopts[@]}" ${extra[@]+"${extra[@]}"} -- "$from" "$dest" 2>"$E" | bsd_verbose
+      [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
+      grep -v "^cp: not replacing '" "$E" | bsd_errors
+    fi
+    continue
+  fi
+
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    if [ "$src" -ef "$dest" ]; then
+      printf 'cp: %s and %s are identical (not copied).\n' "$dest" "$src" >&2
+      rc=1; continue
+    fi
+    if [ $n -eq 1 ]; then
+      [ $v -eq 1 ] && printf '%s not overwritten\n' "$dest"
+      rc=1; continue
+    fi
+    if [ $i -eq 1 ] && ! ask "$dest"; then rc=1; continue; fi
+  fi
+
+  if LC_ALL=C "$GNU" "${gopts[@]}" -- "$src" "$dest" 2>"$E"; then
+    [ $v -eq 1 ] && printf '%s -> %s\n' "$src" "$dest"
+  else
+    rc=1
+  fi
+  bsd_errors < "$E"
+done
+exit "$rc"
