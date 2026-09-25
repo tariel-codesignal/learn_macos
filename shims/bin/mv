@@ -1,0 +1,130 @@
+#!/bin/bash
+# BSD mv, after Apple's file_cmds. Each move is still done by GNU mv (so a move
+# across mounts still copies), but the decisions and the wording are BSD's:
+#   usage     bare `mv` prints BSD's two-line usage and exits 64; GNU says
+#             "missing file operand"
+#   errors    BSD reports the rename it attempted: "mv: rename a to b: ..."
+#   -v        BSD prints "a -> b"; GNU prints "renamed 'a' -> 'b'"
+#   -i / -n   BSD asks "overwrite b? (y/n [n]) "; -n skips quietly, exit 0
+#   case      `mv notes Notes` renames on a Mac, where both names are one entry
+# GNU long options are rejected.
+GNU=/usr/libexec/.sys/bin/mv
+# GNU names itself by argv[0] in every message; run it as plain "mv".
+gnu() { (exec -a mv "$GNU" "$@"); }
+
+usage() {
+  printf '%s\n%s\n' \
+    'usage: mv [-f | -i | -n] [-hv] source target' \
+    '       mv [-f | -i | -n] [-v] source ... directory' >&2
+  exit 64
+}
+illegal() { printf 'mv: illegal option -- %s\n' "$1" >&2; usage; }
+
+f=0 i=0 n=0 h=0 v=0
+args=(); endopts=0
+for a in "$@"; do
+  if [ $endopts -eq 1 ] || [ "${a:0:1}" != - ] || [ "$a" = - ]; then
+    endopts=1; args+=("$a"); continue
+  fi
+  [ "$a" = -- ] && { endopts=1; continue; }
+  rest="${a#-}"
+  while [ -n "$rest" ]; do
+    ch="${rest:0:1}"; rest="${rest:1}"
+    case "$ch" in
+      f) f=1; i=0; n=0 ;;
+      i) i=1; f=0; n=0 ;;
+      n) n=1; f=0; i=0 ;;
+      h) h=1 ;;
+      v) v=1 ;;
+      *) illegal "$ch" ;;
+    esac
+  done
+done
+[ ${#args[@]} -lt 2 ] && usage
+
+E="/tmp/.mv.$$"
+trap 'rm -f "$E"' EXIT
+
+do_move() { # do_move <from> <to>: one rename(2), as BSD's do_move()
+  local from="$1" to="$2" ans err msg
+  if [ $f -eq 0 ] && [ -e "$to" ]; then
+    if [ ! -e "$from" ] && [ ! -L "$from" ]; then
+      printf 'mv: %s: No such file or directory\n' "$from" >&2
+      return 1
+    fi
+    if [ $n -eq 1 ]; then
+      [ $v -eq 1 ] && printf '%s not overwritten\n' "$to"
+      return 0
+    fi
+    if [ $i -eq 1 ]; then
+      printf 'overwrite %s? (y/n [n]) ' "$to" >&2
+      IFS= read -r ans
+      case "$ans" in
+        [yY]*) ;;
+        *) printf 'not overwritten\n' >&2; return 0 ;;
+      esac
+    fi
+  fi
+  if [ ! -e "$from" ] && [ ! -L "$from" ]; then
+    printf 'mv: rename %s to %s: No such file or directory\n' "$from" "$to" >&2
+    return 1
+  fi
+  if LC_ALL=C gnu -f -T -- "$from" "$to" 2>"$E"; then
+    [ $v -eq 1 ] && printf '%s -> %s\n' "$from" "$to"
+    return 0
+  fi
+  err="$(head -1 "$E")"
+  case "$err" in
+    *"are the same file") # rename(2) between two links to one file does nothing
+      [ $v -eq 1 ] && printf '%s -> %s\n' "$from" "$to"
+      return 0 ;;
+    *"with non-directory"*)      msg="Is a directory" ;;
+    *"with directory"*)          msg="Not a directory" ;;
+    *"subdirectory of itself"*)  msg="Invalid argument" ;;
+    *": "*)                      msg="${err##*: }" ;;
+    *)                           msg="$err" ;;
+  esac
+  printf 'mv: rename %s to %s: %s\n' "$from" "$to" "$msg" >&2
+  return 1
+}
+
+last="${args[${#args[@]}-1]}"
+srcs=("${args[@]:0:${#args[@]}-1}")
+
+# a target that isn't a directory takes exactly one source, moved onto it
+if [ ! -d "$last" ]; then
+  if [ ${#srcs[@]} -gt 1 ]; then printf 'mv: %s is not a directory\n' "$last" >&2; exit 1; fi
+  do_move "${srcs[0]}" "$last"; exit $?
+fi
+
+# Both names can be one entry on a case-insensitive disk: `mv notes Notes`
+# is a rename to the new case, not a move of notes into itself.
+if [ ${#srcs[@]} -eq 1 ] && [ "${srcs[0]}" -ef "$last" ]; then
+  a="${srcs[0]}"; b="$last"
+  while [ "${a%/}" != "$a" ]; do a="${a%/}"; done
+  while [ "${b%/}" != "$b" ]; do b="${b%/}"; done
+  if [ "${a##*/}" != "${b##*/}" ]; then do_move "${srcs[0]}" "$last"; exit $?; fi
+fi
+
+# -h: a symlink to a directory is replaced, not moved into
+if [ $h -eq 1 ]; then
+  [ ${#srcs[@]} -gt 1 ] && usage
+  [ -L "$last" ] && { do_move "${srcs[0]}" "$last"; exit $?; }
+fi
+
+dir="$last"
+[ "${dir%/}" = "$dir" ] && dir="$dir/"
+rc=0
+for src in "${srcs[@]}"; do
+  base="$src"
+  while [ "$base" != / ] && [ "${base%/}" != "$base" ]; do base="${base%/}"; done
+  base="${base##*/}"
+  to="$dir$base"
+  # COMMAND_MODE=unix2003: moving a file onto itself is an error, status 2
+  if [ -e "$src" ] && [ "$src" -ef "$to" ]; then
+    printf 'mv: %s and %s are identical\n' "$src" "$to" >&2
+    rc=2; continue
+  fi
+  do_move "$src" "$to" || rc=1
+done
+exit "$rc"

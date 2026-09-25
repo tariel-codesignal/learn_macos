@@ -127,6 +127,15 @@ is    "cp -v prints bare paths"     "$T/cpt/site/index.html -> $T/cpt/vault/inde
       cp -v "$T/cpt/site/index.html" "$T/cpt/vault"
 mkdir -p "$T/cpt/v2"; cp -R "$T/cpt/site/" "$T/cpt/v2"
 is    "cp -R dir/ copies its contents" "assets index.html" bash -c "ls $T/cpt/v2 | xargs"
+errs  "bare cp prints BSD usage"    "usage: cp [-R [-H | -L | -P]] [-fi | -n] [-aclpSsvXx] source_file target_file" cp
+errs  "bare mv prints BSD usage"    "usage: mv [-f | -i | -n] [-hv] source target" mv
+rm -rf "$T/mvt"; mkdir -p "$T/mvt/dir"; touch "$T/mvt/a"
+errs  "mv names the rename it tried" "mv: rename $T/mvt/nope to $T/mvt/x: No such file or directory" \
+      mv "$T/mvt/nope" "$T/mvt/x"
+errs  "mv to a non-dir takes one source" "mv: $T/mvt/a is not a directory" mv "$T/mvt/dir" "$T/mvt/dir" "$T/mvt/a"
+is    "mv -v prints bare paths"     "$T/mvt/a -> $T/mvt/dir/a" mv -v "$T/mvt/a" "$T/mvt/dir"
+mv "$T/mvt/dir" "$T/mvt/Dir"
+is    "mv to a case variant renames" "Dir" ls "$T/mvt"
 succeeds "mktemp works (TMPDIR exists)" bash -c 'f=$(mktemp) && rm -f "$f"'
 
 group "case-insensitive filesystem (casefold.so)"
