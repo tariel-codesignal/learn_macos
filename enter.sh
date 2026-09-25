@@ -131,6 +131,7 @@ if [ -n "${MACOS_SELFTEST:-}" ]; then
 fi
 
 # ------------------------------------------------------------------ login
+MAC_TZ=Europe/Berlin
 ENVV=(
   HOME=/Users/Learner
   USER=Learner
@@ -141,7 +142,7 @@ ENVV=(
   TERM_PROGRAM_VERSION=455
   TERM_SESSION_ID=w0t0p0
   LANG=en_US.UTF-8
-  TZ=Europe/Berlin
+  TZ="$MAC_TZ"
   __CF_USER_TEXT_ENCODING=0x1F5:0x0:0x0
   XPC_SERVICE_NAME=0
   XPC_FLAGS=0x0
@@ -182,7 +183,7 @@ signal.signal(signal.SIGTTOU, signal.SIG_IGN)
 os.tcsetpgrp(0, os.getpgrp())' 2>/dev/null
 }
 while :; do
-  printf 'Last login: %s on ttys000\n' "$(LC_ALL=C date '+%a %b %e %T')"
+  printf 'Last login: %s on ttys000\n' "$(TZ="$MAC_TZ" LC_ALL=C date '+%a %b %e %T')"
   chroot "$R" /usr/bin/env -i "${ENVV[@]}" \
     /bin/sh -c "cd '$START' && exec /bin/zsh -l"
   reclaim_tty

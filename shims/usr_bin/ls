@@ -7,6 +7,9 @@
 #  - keeps Linux-only entries out of a listing of /
 GNU=/usr/libexec/.sys/bin/ls
 GNUOPT=(--tabsize=0)
+# BSD ls sorts names by byte value (notes-v2.txt before notes.txt); GNU in a
+# UTF-8 locale collates and skips punctuation. Names still print as UTF-8.
+export LC_COLLATE=C
 HIDE_ROOT=" lib lib64 proc "
 
 usage() {
@@ -24,7 +27,7 @@ bsdify() {
     function flush(  i) {
       for (i = 1; i <= n; i++) {
         if (kind[i] == "l")
-          print mode[i] "   " lpad(link[i], lw) " " rpad(own[i], ow) "  " \
+          print mode[i] "  " lpad(link[i], lw) " " rpad(own[i], ow) "  " \
                 rpad(grp[i], gw) "  " lpad(size[i], sw) " " when[i] " " name[i]
         else
           print raw[i]
