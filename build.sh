@@ -423,6 +423,15 @@ install_shims "$HERE/shims/homebrew_bin" "$R/opt/homebrew/bin"
 install -m 755 "$VEN/tools/bin/"* "$R/usr/bin/"
 [ -d "$VEN/tools/share/nano" ] && cp -a "$VEN/tools/share/nano" "$R/System/Library/nano"
 
+# A Mac's disk ignores case: `mkdir Notes` next to notes says "File exists" and
+# `cd NOTES` works. The host's filesystem can't, so every program in the tree
+# loads casefold.so (casefold/casefold.c), which retries a lookup that found
+# nothing with the case ignored. /etc/ld.so.preload rather than LD_PRELOAD,
+# which `env` would show; not /usr/lib, which enter.sh binds the host's over.
+mkdir -p "$R/private/var/db"
+install -m 644 "$HERE/vendor/casefold.so" "$R/private/var/db/.casefold.so"
+echo /private/var/db/.casefold.so > "$R/private/etc/ld.so.preload"
+
 # sudo: real sudo is setuid and cannot work inside a user namespace
 cat > "$R/usr/bin/sudo" <<'EOF'
 #!/bin/bash

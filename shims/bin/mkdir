@@ -8,6 +8,9 @@
 # GNU long options are rejected, and the exit status for a usage error is BSD's
 # 64 rather than GNU's 1.
 GNU=/usr/libexec/.sys/bin/mkdir
+# GNU names itself by argv[0] in every message; run it as plain "mkdir" so
+# its errors read "mkdir: ..." and the rewriting below can find them.
+gnu() { (exec -a mkdir "$GNU" "$@"); }
 
 usage() { printf 'usage: mkdir [-pv] [-m mode] directory_name ...\n' >&2; exit 64; }
 illegal() { printf 'mkdir: illegal option -- %s\n' "$1" >&2; usage; }
@@ -45,7 +48,7 @@ done
 # is what makes the rewriting below predictable.
 E="/tmp/.mkdir.$$"
 trap 'rm -f "$E"' EXIT
-LC_ALL=C "$GNU" ${opts[@]+"${opts[@]}"} -- "${dirs[@]}" 2>"$E" \
+LC_ALL=C gnu ${opts[@]+"${opts[@]}"} -- "${dirs[@]}" 2>"$E" \
   | sed -E "s/^mkdir: created directory '(.*)'\$/\1/"
 rc=${PIPESTATUS[0]}
 

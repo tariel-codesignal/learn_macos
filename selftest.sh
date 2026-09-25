@@ -119,7 +119,31 @@ errs  "mkdir names an existing dir" "mkdir: $T/mk: File exists" mkdir "$T/mk"
 errs  "mkdir names the missing parent" "mkdir: $T/mk/nope: No such file or directory" \
       mkdir "$T/mk/nope/child"
 errs  "mkdir rejects GNU long options" "illegal option" mkdir --parents "$T/mk/c"
+rm -rf "$T/cpt"; mkdir -p "$T/cpt/site/assets" "$T/cpt/vault"; touch "$T/cpt/site/index.html"
+errs  "cp without -R skips a dir, BSD-style" "cp: $T/cpt/site is a directory (not copied)." \
+      cp "$T/cpt/site" "$T/cpt/vault"
+errs  "cp names a missing source"   "cp: $T/cpt/nope: No such file or directory" cp "$T/cpt/nope" "$T/cpt/vault"
+is    "cp -v prints bare paths"     "$T/cpt/site/index.html -> $T/cpt/vault/index.html" \
+      cp -v "$T/cpt/site/index.html" "$T/cpt/vault"
+mkdir -p "$T/cpt/v2"; cp -R "$T/cpt/site/" "$T/cpt/v2"
+is    "cp -R dir/ copies its contents" "assets index.html" bash -c "ls $T/cpt/v2 | xargs"
 succeeds "mktemp works (TMPDIR exists)" bash -c 'f=$(mktemp) && rm -f "$f"'
+
+group "case-insensitive filesystem (casefold.so)"
+# A Mac's disk ignores case but keeps it. Lessons lean on this directly
+# ("mkdir Notes" after "mkdir notes"), so check it the way a learner meets it.
+rm -rf "$T/cs"; mkdir -p "$T/cs/notes"
+errs  "mkdir of a case twin says File exists" "mkdir: $T/cs/Notes: File exists" mkdir "$T/cs/Notes"
+is    "the twin was not created"             "notes" ls "$T/cs"
+touch "$T/cs/notes/agenda.txt"
+is    "ls reaches the dir in another case"   "agenda.txt" ls "$T/cs/NOTES"
+is    "cd reaches it too"                    "$T/cs/Notes" /bin/zsh -fc "cd $T/cs/Notes && pwd"
+echo hi > "$T/cs/NOTES/Agenda.TXT"
+is    "writing a case twin writes the file"  "hi" cat "$T/cs/notes/agenda.txt"
+is    "and makes no second file"             "agenda.txt" ls "$T/cs/notes"
+mv "$T/cs/notes" "$T/cs/Notes"
+is    "a case-only mv renames"               "Notes" ls "$T/cs"
+errs  "a real miss is still a miss"          "No such file or directory" ls "$T/cs/nothing"
 
 group "leak containment"
 lacks "find / does not walk into /proc"  "/proc"  find / -maxdepth 1

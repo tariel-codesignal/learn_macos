@@ -12,6 +12,9 @@
 #             contents rather than the directory itself
 # GNU long options are rejected, and a usage error exits 64 as on a Mac.
 GNU=/usr/libexec/.sys/bin/cp
+# GNU names itself by argv[0] in every message; run it as plain "cp" so
+# its errors read "cp: ..." and the rewriting below can find them.
+gnu() { (exec -a cp "$GNU" "$@"); }
 
 usage() {
   printf '%s\n%s\n' \
@@ -145,11 +148,11 @@ for src in "${srcs[@]}"; do
     [ $v -eq 1 ] && extra+=(-v)
     if [ $i -eq 1 ]; then
       # prompts need a live stderr, so they keep GNU's wording inside a tree
-      LC_ALL=C "$GNU" "${gopts[@]}" -i ${extra[@]+"${extra[@]}"} -- "$from" "$dest" | bsd_verbose
+      LC_ALL=C gnu "${gopts[@]}" -i ${extra[@]+"${extra[@]}"} -- "$from" "$dest" | bsd_verbose
       [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
     else
       [ $n -eq 1 ] && extra+=(-n)
-      LC_ALL=C "$GNU" "${gopts[@]}" ${extra[@]+"${extra[@]}"} -- "$from" "$dest" 2>"$E" | bsd_verbose
+      LC_ALL=C gnu "${gopts[@]}" ${extra[@]+"${extra[@]}"} -- "$from" "$dest" 2>"$E" | bsd_verbose
       [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1
       grep -v "^cp: not replacing '" "$E" | bsd_errors
     fi
@@ -168,7 +171,7 @@ for src in "${srcs[@]}"; do
     if [ $i -eq 1 ] && ! ask "$dest"; then rc=1; continue; fi
   fi
 
-  if LC_ALL=C "$GNU" "${gopts[@]}" -- "$src" "$dest" 2>"$E"; then
+  if LC_ALL=C gnu "${gopts[@]}" -- "$src" "$dest" 2>"$E"; then
     [ $v -eq 1 ] && printf '%s -> %s\n' "$src" "$dest"
   else
     rc=1

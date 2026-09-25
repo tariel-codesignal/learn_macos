@@ -21,6 +21,24 @@ if [ "${MACOS_STAGE:-}" != "inner" ]; then
                "$SELF" "$@"
 fi
 
+# An interactive login loops (see the end), which needs the terminal back after
+# each zsh. Inside the PID namespace this script's process group is unshare's,
+# whose id can't be named from here, so it can't be handed the terminal. Lead a
+# group of our own and take the terminal once, up front. bash has no builtins
+# for setpgid/tcsetpgrp.
+if [ $# -eq 0 ] && [ -t 0 ] && [ -z "${MACOS_PGRP:-}" ] && command -v python3 >/dev/null 2>&1; then
+  export MACOS_PGRP=1
+  exec python3 -c 'import os, signal, sys
+signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+try:
+    os.setpgid(0, 0)
+    os.tcsetpgrp(0, os.getpgrp())
+except OSError:
+    pass
+signal.signal(signal.SIGTTOU, signal.SIG_DFL)
+os.execv("/bin/bash", ["bash"] + sys.argv[1:])' "$0"
+fi
+
 # ------------------------------------------------------------------- hostname
 hostname "$HOST_NAME" 2>/dev/null
 
@@ -149,8 +167,28 @@ if [ -f "$R/private/var/db/.startdir" ]; then
   esac
 fi
 
-LOGIN_TS="$(LC_ALL=C date '+%a %b %e %T')"
-printf 'Last login: %s on ttys000\n' "$LOGIN_TS"
-
-exec chroot "$R" /usr/bin/env -i "${ENVV[@]}" \
-  /bin/sh -c "cd '$START' && exec /bin/zsh -l"
+# When a Mac's shell exits, Terminal says so and the window goes dead - there is
+# nothing underneath to land in. Here there is: `exit` (or ^D) would return to
+# the host bash that ran setup.sh - real Linux, where `script` has stopped
+# recording and the grader's logs are writable. So stay in this loop instead,
+# and let any key open a fresh login, the way a new window would.
+#
+# zsh makes itself the terminal's foreground group and leaves that (now empty)
+# group in charge when it exits, so a read from here would fail with EIO. Take
+# the terminal back first; bash has no builtin for tcsetpgrp.
+reclaim_tty() {
+  python3 -c 'import os, signal
+signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+os.tcsetpgrp(0, os.getpgrp())' 2>/dev/null
+}
+while :; do
+  printf 'Last login: %s on ttys000\n' "$(LC_ALL=C date '+%a %b %e %T')"
+  chroot "$R" /usr/bin/env -i "${ENVV[@]}" \
+    /bin/sh -c "cd '$START' && exec /bin/zsh -l"
+  reclaim_tty
+  printf '\n[Process completed]\n\n'
+  # a failed read means the terminal itself is gone: stop rather than spin
+  IFS= read -rsn1 _ || exit 0
+  # an arrow key is several bytes; don't hand the rest to the next shell
+  while IFS= read -rsn1 -t 0.05 _; do :; done
+done
